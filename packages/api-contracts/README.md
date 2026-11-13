@@ -21,3 +21,8 @@ validates the body only. The `details` object is extensible.
 P01 foundation verification: Ajv validated the schema, example, and boundary
 cases; the Project Service error tests passed. Contract compatibility and
 breaking-change checks remain open.
+
+## P01 service-to-service contract drafts
+
+- [Project confirmed-fact snapshot v1](./project-fact-snapshot.v1.md) - proposed
+  synchronous read from AI Orchestration to Project; not deployed.
