@@ -1,0 +1,33 @@
+name: Backend Docker smoke tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/**"
+      - "scripts/test-services.ps1"
+      - ".github/workflows/backend-smoke.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "services/**"
+      - "scripts/test-services.ps1"
+      - ".github/workflows/backend-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build and check all nine backend services
+        shell: pwsh
+        run: ./scripts/test-services.ps1
