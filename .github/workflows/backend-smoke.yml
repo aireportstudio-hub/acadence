@@ -5,12 +5,14 @@ on:
     branches: [main]
     paths:
       - "services/**"
+      - "packages/api-contracts/**"
       - "scripts/test-services.ps1"
       - ".github/workflows/backend-smoke.yml"
   pull_request:
     branches: [main]
     paths:
       - "services/**"
+      - "packages/api-contracts/**"
       - "scripts/test-services.ps1"
       - ".github/workflows/backend-smoke.yml"
   workflow_dispatch:

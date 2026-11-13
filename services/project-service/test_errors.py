@@ -1,11 +1,21 @@
+import json
 import unittest
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from fastapi.testclient import TestClient
+from jsonschema import Draft7Validator
 from pydantic import BaseModel
 
 from main import app
 
+
+ERROR_RESPONSE_SCHEMA_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "packages"
+    / "api-contracts"
+    / "error-response.v1.schema.json"
+)
 
 router = APIRouter()
 
@@ -37,9 +47,18 @@ app.include_router(router)
 
 
 class ProjectServiceErrorTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        with ERROR_RESPONSE_SCHEMA_PATH.open(encoding="utf-8") as schema_file:
+            cls.error_response_schema = json.load(schema_file)
+        cls.error_response_validator = Draft7Validator(cls.error_response_schema)
+
     def setUp(self):
         self.client = TestClient(app, raise_server_exceptions=False)
         self.addCleanup(self.client.close)
+
+    def test_error_response_schema_is_valid(self):
+        Draft7Validator.check_schema(self.error_response_schema)
 
     def assert_valid_request_id(self, response):
         request_id = response.headers["X-Request-ID"]
@@ -50,6 +69,7 @@ class ProjectServiceErrorTest(unittest.TestCase):
         self.assertEqual(response.status_code, status)
         request_id = self.assert_valid_request_id(response)
         body = response.json()
+        self.error_response_validator.validate(body)
         self.assertEqual(set(body), {"code", "message", "request_id", "details"})
         self.assertEqual(body["request_id"], request_id)
         self.assertIsInstance(body["code"], str)
