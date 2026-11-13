@@ -84,6 +84,8 @@ Acadence is a multi-disciplinary, voice-enabled, agentic academic report platfor
 
 **Gate P01:** Nine independently deployable **empty/skeleton services**, not nine fully built products; only the test frontend endpoint reaches a properly authenticated backend; cross-service permission tests pass.
 
+The remaining P01 execution gates and required evidence are consolidated in the [P01 remaining execution checklist](./runbooks/P01_REMAINING_EXECUTION_CHECKLIST.md). The Auth runbook, ingress ADR, and Project fact-snapshot contract remain their respective sources of truth.
+
 ### Phase P02 — Service-owned persistence, audit and event patterns
 
 **Depends on:** P01. **Owners:** each service; platform/infrastructure.
