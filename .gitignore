@@ -28,3 +28,6 @@ __pycache__/
 dist/
 *.tsbuildinfo
 .p00-output/
+
+/apps/frontend/.vinext/
+/apps/frontend/next-env.d.ts
