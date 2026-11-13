@@ -1,0 +1,15 @@
+---
+description: Acadence architecture and development sequence
+alwaysApply: true
+---
+
+Read docs/ACADENCE_TECH_STACK_V2_2.md, docs/ACADENCE_MULTI_AGENT_ARCHITECTURE_V1_1.md,
+docs/ACADENCE_SYSTEM_ARCHITECTURE_V1_1.md, and docs/ACADENCE_DEVELOPMENT_ROADMAP_V1_0.md
+before implementing a task. Use the latest sections over the archived sections embedded
+in those files. See docs/adr/P00_COMPATIBILITY.md for compatibility evidence and open items.
+
+Keep Cloudflare Workers, the nine Cloud Run service boundaries and service-owned data,
+the single LangGraph coordinator, and the approved product and plan rules.
+Use verified student inputs for project-specific claims and verified evidence for citations.
+Load only the environment variables a component needs. Keep credentials out of Git.
+Record the test evidence and any open decision for the requested roadmap task.

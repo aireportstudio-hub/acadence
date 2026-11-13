@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Acadence | Guided report prototype</title>
+<style>
+:root{color-scheme:light;--ink:#251b40;--muted:#5e5574;--violet:#6d28d9;--deep:#5b21b6;--line:#e3dbf3;--wash:#f3edff;--canvas:#f9f7ff;--paper:#fff;--good:#136643;--warning:#874e05;--radius:20px}
+*{box-sizing:border-box}
+body{margin:0;min-width:0;background:radial-gradient(ellipse at 12% 12%,#ece0ff 0,transparent 45%),var(--canvas);color:var(--ink);font:16px/1.5 Inter,system-ui,sans-serif}
+button,input,textarea,select{font:inherit}
+button,input,textarea,select,a{scroll-margin:12px}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,[tabindex="-1"]:focus-visible{outline:3px solid var(--violet);outline-offset:3px}
+button{min-height:44px;min-width:44px;max-width:100%;overflow-wrap:anywhere;border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--deep);padding:9px 14px;font-weight:650;cursor:pointer}
+button:hover{background:var(--wash)}
+button:disabled{cursor:default;opacity:.65}
+.primary{background:linear-gradient(110deg,#7633eb,var(--deep));border-color:transparent;color:#fff}
+.primary:hover{background:var(--deep)}
+.quiet{background:transparent}
+[hidden]{display:none!important}
+h1,h2,h3,p{margin:0}
+h1{font-size:clamp(1.7rem,4vw,2.55rem);letter-spacing:-.045em;line-height:1.08;margin:0 0 12px}
+h2{font-size:1.15rem;letter-spacing:-.018em;margin-bottom:8px}
+h3{font-size:1rem}
+p+p{margin-top:8px}
+small,.muted{color:var(--muted)}
+.wrap{max-width:1440px;margin:auto;padding-inline:clamp(12px,3vw,42px)}
+.top{border-bottom:1px solid var(--line);background:#ffffffea}
+.header{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:72px;flex-wrap:wrap;padding-block:8px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:780;font-size:1.28rem;letter-spacing:-.05em}
+.logo{display:grid;place-items:center;background:linear-gradient(145deg,#9b60f5,#6021c0);color:white;border-radius:11px;width:36px;height:36px;font-family:Georgia,serif;font-weight:700}
+.nav,.actions,.tags{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.nav button[aria-current="page"]{background:var(--wash);border-color:#d5befa}
+main.wrap{padding-block:clamp(18px,4vw,48px) max(24px,env(safe-area-inset-bottom));padding-left:max(clamp(12px,3vw,42px),env(safe-area-inset-left));padding-right:max(clamp(12px,3vw,42px),env(safe-area-inset-right))}
+.workspace{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-items:start}
+.panel{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:clamp(13px,2vw,25px);box-shadow:0 10px 32px #4930790c;min-width:0;overflow-wrap:anywhere}
+.hero{background:linear-gradient(125deg,#fff 18%,#eee1ff 100%);padding:clamp(18px,5vw,62px);margin-bottom:14px}
+.hero p{max-width:60ch;margin-bottom:16px}
+.card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:12px}
+.option{text-align:left;display:grid;gap:6px;color:var(--ink);padding:15px}
+.option[aria-pressed="true"]{border:2px solid var(--violet);background:#f7f0ff;padding:14px}
+.option small{font-weight:500}
+.cover{height:64px;width:48px;background:linear-gradient(155deg,#fff 54%,#d6bdfb 55%,#f0e5ff 75%);border:1px solid #d7c5ed;border-radius:4px;box-shadow:0 4px 10px #251b4014;margin-bottom:4px}
+.cover:before{content:"";display:block;width:24px;height:16px;margin:14px auto;background:repeating-linear-gradient(#b9a6d8 0 2px,transparent 2px 5px)}
+.mentor{background:radial-gradient(ellipse at 50% 33%,#e9d6ff 0,transparent 60%),#fcfaff}
+.robot-stage{display:grid;place-items:center;height:163px;position:relative}
+.halo{width:150px;height:150px;border-radius:50%;border:1px solid #d9baf9;position:absolute;box-shadow:0 0 0 10px #ede0ff,0 0 0 11px #e0cef7}
+.robot{position:relative;width:125px;height:133px;filter:drop-shadow(0 10px 12px #6020b53b)}
+.antenna{position:absolute;left:61px;top:10px;width:5px;height:18px;background:#8d55da;border-radius:4px}
+.antenna:before{content:"";position:absolute;top:-5px;left:-3px;width:11px;height:11px;border-radius:50%;background:#a46df8;border:2px solid #e4d0ff}
+.head{position:absolute;top:27px;left:11px;width:104px;height:72px;border-radius:31px;background:linear-gradient(152deg,#fff 22%,#f2e5ff 57%,#aa79e0 100%);border:2px solid #f6edff}
+.ear{position:absolute;top:48px;width:16px;height:32px;border-radius:10px;background:linear-gradient(#b17dfa,#6d28d9)}
+.ear.left{left:1px}.ear.right{right:1px}
+.visor{position:absolute;inset:12px 9px;border-radius:21px;background:linear-gradient(145deg,#3b255f,#22183d);box-shadow:inset 0 2px 4px #160d2f}
+.eyes{display:flex;justify-content:center;gap:19px;margin-top:12px}
+.eyes b{width:9px;height:13px;border-radius:8px;background:#e9c9ff;box-shadow:0 0 8px #c492ff}
+.mouth{width:14px;height:5px;border-bottom:2px solid #debaff;border-radius:50%;margin:3px auto}
+.body{position:absolute;bottom:10px;left:35px;width:55px;height:25px;border-radius:10px 10px 20px 20px;background:linear-gradient(145deg,#fff,#d1a8fb);border:2px solid #f7edff}
+.body:before{content:"";display:block;width:10px;height:10px;margin:5px auto;border-radius:3px;background:#9b62e9;transform:rotate(45deg)}
+.mentor[data-speaking="true"] .mouth{height:8px;background:#d7a4ff;animation:talk .35s infinite alternate}
+@keyframes talk{to{transform:scaleY(.42)}}
+.mentor-tools{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
+.mentor-label{text-align:center;margin-bottom:10px}
+.mentor-label small{display:block;min-height:23px}
+.milestones{display:grid;gap:10px;margin:10px 0 0;padding:0;list-style:none}
+.milestones li{display:flex;align-items:center;gap:9px;color:var(--muted)}
+.dot{width:22px;height:22px;flex:none;display:grid;place-items:center;border-radius:50%;border:1px solid #cabbdf;font-size:.75rem}
+.current{font-weight:700;color:var(--deep)!important}.current .dot{background:var(--violet);border-color:var(--violet);color:white}.done .dot{color:var(--good);background:#e5f5ed;border-color:#c1e1cf}
+.steps summary{cursor:pointer;min-height:44px;align-content:center;font-weight:700;color:var(--ink)}
+.flow-head{margin-bottom:16px}
+.bubble{padding:14px 16px;background:var(--wash);border-left:3px solid #a78bfa;border-radius:0 12px 12px 0;margin:0 0 14px;color:var(--ink);font-weight:580}
+.field{display:grid;gap:6px;margin:12px 0;font-weight:650}
+input,textarea,select{min-height:44px;width:100%;min-width:0;background:white;border:1px solid #ac9bc7;border-radius:11px;padding:9px 11px;color:var(--ink)}
+textarea{resize:vertical}
+form,.group{margin:12px 0}
+.notice{padding:12px 14px;border:1px solid #f0d9b0;background:#fff8eb;color:var(--warning);border-radius:12px;margin:12px 0}
+.note{padding:10px 13px;border:1px solid var(--line);background:#fcfaff;border-radius:12px;margin:12px 0}
+.check{display:flex;align-items:center;min-height:44px;gap:9px}.check input{width:18px;height:18px;min-height:0}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:9px 0}
+.badge{display:inline-flex;padding:2px 9px;border-radius:999px;background:var(--wash);color:var(--deep);font-size:.83rem;font-weight:650}
+.badge.good{background:#e7f5ed;color:var(--good)}
+.paper{border:1px solid var(--line);border-radius:12px;background:#fff;padding:clamp(14px,4vw,34px);margin:14px 0;font:1rem/1.6 Georgia,serif}
+.paper{overflow-wrap:anywhere}.paper h2,.paper h3{font-family:Inter,system-ui,sans-serif}
+details.transcript{margin-top:18px;border-top:1px solid var(--line);padding-top:6px}
+details.transcript summary{min-height:44px;align-content:center;cursor:pointer;font-weight:650;color:var(--deep)}
+.history{padding:0;list-style:none;margin:5px 0;display:grid;gap:7px}
+.history li{padding:9px 11px;border-radius:10px;background:#f8f4ff}
+.history strong{display:block;font-size:.83rem;color:var(--deep)}
+.page-rows{padding:0;list-style:none;display:grid;gap:7px}
+.page-rows li{border:1px solid var(--line);border-radius:12px;padding:8px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px}
+.fact-list dt{font-weight:700;margin-top:7px}.fact-list dd{margin:0;color:var(--muted);white-space:pre-wrap}
+.skip{position:absolute;top:-80px;left:12px;padding:10px;background:white;z-index:4}.skip:focus{top:8px}
+@media(min-width:768px){.workspace{grid-template-columns:minmax(185px,.65fr) minmax(0,1.85fr)}.steps{grid-column:2}.mentor{grid-row:span 2}}
+@media(min-width:1440px){.workspace{grid-template-columns:minmax(195px,1fr) minmax(0,2.65fr) minmax(185px,.95fr)}.steps{grid-column:auto}.mentor{grid-row:auto}}
+@media(max-width:767px){
+  .mentor{display:grid;grid-template-columns:66px minmax(0,1fr);gap:4px 8px;align-items:center;padding-block:9px}
+  .robot-stage{height:60px;grid-row:span 2}.robot{transform:scale(.44);position:absolute}.halo{transform:scale(.33)}
+  .mentor-label{text-align:left;margin:0}.mentor-label h2{margin:0}
+  .mentor-tools{justify-content:flex-start;gap:5px}.mentor-tools button{padding-inline:8px}
+  .header{min-height:60px;padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
+  .nav button{padding-inline:9px}.steps{padding-block:4px}.nav{gap:5px}
+}
+@media(max-width:359px){.header{align-items:flex-start;flex-direction:column}.mentor-tools{grid-column:1/-1}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+<header class="top"><div class="header wrap"><div class="brand"><span class="logo" aria-hidden="true">A</span>Acadence</div><nav class="nav" aria-label="Main"><button type="button" data-nav="home">Workspace</button><button type="button" data-nav="plans">Plans</button><button type="button" data-nav="signin">Sign in</button></nav></div></header>
+<main class="wrap" id="main" tabindex="-1"></main>
+<script>
+const main = document.getElementById("main");
+const steps = ["Choose template", "Project details", "Adaptive question", "Confirm facts", "Generate report", "Preview and export"];
+const stepByView = {template:0,builder:0,details:1,question:2,answer:2,confirm:3,generation:4,report:5};
+const starterTemplates = [
+  {name:"Academic project",description:"General university-style layout",pages:["Cover page","Declaration","Table of contents"]},
+  {name:"Research study",description:"Research-oriented layout",pages:["Cover page","Abstract","Table of contents"]}
+];
+const plans = [
+  {name:"Hobby",summary:"1 trial report · up to 10 pages",detail:"Preview only · no downloads",formats:[]},
+  {name:"Pro",summary:"1 project · up to 100 pages",detail:"Word (DOCX) and PDF",formats:["Word (DOCX)","PDF"]},
+  {name:"Premium",summary:"2 projects · up to 100 pages each",detail:"Word (DOCX), PDF and LaTeX",formats:["Word (DOCX)","PDF","LaTeX"]}
+];
+const state = {view:"home",selected:0,template:null,plan:"Hobby",title:"",course:"",method:"",draft:"",answer:"",source:"typing",voice:false,speaking:false,progress:0,offline:false,interrupted:false,finished:false,history:[],custom:[],notice:"",builderName:"",pages:[],auth:"",quality:false,stepsOpen:null,transcriptOpen:false,resume:"template",lastObserved:"",lastPreview:""};
+const safe = value => String(value).replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
+const templates = () => [...starterTemplates,...state.custom];
+const currentPlan = () => plans.find(plan=>plan.name===state.plan);
+let generationTimer, speechToken = 0;
+const speakable = () => "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+function speechOff() {
+  speechToken++;
+  if(speakable()) window.speechSynthesis.cancel();
+  state.speaking=false;
+  updateVoice();
+}
+function updateVoice() {
+  const mentor = document.getElementById("mentor");
+  if(!mentor)return;
+  mentor.dataset.speaking=String(state.speaking);
+  document.getElementById("voice-status").textContent=state.speaking ? "Speaking" : state.voice ? "Voice on" : "Voice off";
+  document.getElementById("voice-toggle").textContent=state.voice ? "Mute voice" : "Enable voice";
+}
+function playCaption(replay = false) {
+  const caption=document.getElementById("caption");
+  if(!caption || (!state.voice && !replay) || !speakable())return;
+  speechOff();
+  const token=speechToken;
+  const utterance=new window.SpeechSynthesisUtterance(caption.textContent);
+  utterance.onstart=()=>{if(token===speechToken){state.speaking=true;updateVoice();}};
+  const settle=()=>{if(token===speechToken){state.speaking=false;updateVoice();}};
+  utterance.onend=settle;
+  utterance.onerror=()=>{
+    if(token!==speechToken)return;
+    settle();
+    showNotice("Speech playback couldn’t start. You can read the caption or try Read aloud again.");
+  };
+  window.speechSynthesis.speak(utterance);
+}
+const generationCaptions = [
+  "I’m preparing your sample report from the facts you confirmed.",
+  "The introduction draft is saved. I’m preparing the methodology.",
+  "The methodology draft is saved. I’m checking the sample sections against your answers.",
+  "The sample sections are reviewed. I’m applying your selected template."
+];
+function projectQuestion() {
+  const course=state.course.toLowerCase();
+  if (/psychology|medicine|mbbs|clinical|health/.test(course)) return "What study design or data collection method did you use?";
+  if (/law|llb|legal/.test(course)) return "What jurisdiction and legal research method did you use?";
+  if (/software|computer|computing|information technology/.test(course)) return "Which tools or technologies did you use to build your project?";
+  return "Which method, process or tools did you actually use in this project?";
+}
+function message() {
+  return {
+    template:"Welcome! I’ll guide you through creating your report. First, choose a university template.",
+    builder:"Arrange the initial pages, then save your template and return to your project.",
+    details:"Your template is selected. Tell me about your course and project.",
+    question:projectQuestion(),
+    answer:"Review the answer below before adding it to your project facts.",
+    confirm:"Review your template and confirmed facts before starting generation.",
+    generation:state.offline ? "Your browser is disconnected in this simulation. Reconnect to check the report’s current status." : state.interrupted ? "The sample worker stopped. You can resume from the last saved stage." : state.finished ? "Your sample report is ready to preview." : generationCaptions[state.progress],
+    report:"Your sample report is ready. The available formats depend on the plan you’re previewing."
+  }[state.view] || "";
+}
+function record(role,text) {
+  const last=state.history.at(-1);
+  if(text && (last?.text!==text || last.role!==role))state.history.push({role,text});
+}
+function change(view) {
+  speechOff();
+  state.view=view;
+  state.notice="";
+  record("AI Mentor",message());
+  render();
+  document.getElementById("page-title")?.focus({preventScroll:true});
+  window.scrollTo(0,0);
+  playCaption();
+}
+function actions(html){return '<div class="actions">'+html+'</div>'}
+function button(action,label,cls="",extra=""){return `<button type="button" data-action="${action}" class="${cls}" ${extra}>${label}</button>`}
+function heading(title,sub=""){return `<div class="flow-head"><h1 id="page-title" tabindex="-1">${title}</h1>${sub?`<p class="muted">${sub}</p>`:""}</div>`;}
+function home() {
+  return `<section class="panel hero">${heading("Your report workspace","Start with a university-style template, then build your report with the AI Mentor.")}${actions(button("start","Create New Project","primary")+(state.template?button("resume-project","Return to project"):""))}</section>
+  <div class="card-grid"><section class="panel"><h2>Demo plan</h2><p>${currentPlan().name}</p><small>${currentPlan().summary}</small></section><section class="panel"><h2>Personal templates</h2><p>${state.custom.length} of 3 saved</p><small>Create a template from the new-project flow.</small></section></div>`;
+}
+function planView() {
+  return `<section class="panel">${heading("Compare plans","Choose a demo plan to test report access.")}<div class="card-grid">${plans.map(plan=>`<div class="panel"><h2>${plan.name}</h2><p>${plan.summary}</p><p>${plan.detail}</p><div class="group">${button("pick-plan",state.plan===plan.name?"Selected":"Try "+plan.name,"",`data-value="${plan.name}" aria-pressed="${state.plan===plan.name}"`)}</div></div>`).join("")}</div><div class="group">${button(state.finished?"report":"home",state.finished?"Back to report":"Back to workspace","primary")}</div></section>`;
+}
+function authView() {
+  let content=actions(button("google","Continue with Google","primary")+button("mobile","Continue with mobile OTP"));
+  if(state.auth==="google")content=`<p class="note">The Google sign-in step is simulated.</p>${button("home","Enter demo workspace","primary")}`;
+  if(state.auth==="mobile")content=`<form data-form="mobile"><label class="field">Mobile number <small>Use a sample number for this demo</small><input type="tel" name="number" value="+91 00000 00000" required maxlength="22"></label><button class="primary">Send demo code</button></form>`;
+  if(state.auth==="otp")content=`<form data-form="otp"><label class="field">Enter the demo code <small>Use 123456</small><input name="code" inputmode="numeric" maxlength="6" autocomplete="off" required></label><button class="primary">Verify demo code</button></form>`;
+  return `<section class="panel hero">${heading("Sign in to Acadence","Authentication preview")}${content}${state.auth?'<div class="group">'+button("auth-back","Back to sign-in choices")+'</div>':""}<div id="auth-feedback" role="status"></div></section>`;
+}
+function mentor() {
+  return `<aside class="panel mentor" id="mentor" aria-label="AI Mentor" data-speaking="${state.speaking}">
+  <div class="robot-stage" aria-hidden="true"><div class="halo"></div><div class="robot"><div class="antenna"></div><div class="ear left"></div><div class="ear right"></div><div class="head"><div class="visor"><div class="eyes"><b></b><b></b></div><div class="mouth"></div></div></div><div class="body"></div></div></div>
+  <div class="mentor-label"><h2>AI Mentor</h2><small id="voice-status">${state.voice?"Voice on":"Voice off"}</small></div>
+  <div class="mentor-tools">${button("voice",state.voice?"Mute voice":"Enable voice","",`id="voice-toggle"`)}${button("replay","Read aloud")}</div></aside>`;
+}
+function milestones() {
+  const active=stepByView[state.view];
+  return `<details class="panel steps" ${(state.stepsOpen ?? innerWidth>=1440)?"open":""}><summary>Project progress</summary><ol class="milestones">${steps.map((name,i)=>`<li class="${i===active?"current":i<active?"done":""}" ${i===active?'aria-current="step"':""}><span class="dot" aria-hidden="true">${i<active?"✓":i+1}</span>${name}</li>`).join("")}</ol></details>`;
+}
+function transcript() {
+  return `<details class="transcript" ${state.transcriptOpen?"open":""}><summary>Conversation transcript</summary><ul class="history">${state.history.map(item=>`<li><strong>${safe(item.role)}</strong>${safe(item.text)}</li>`).join("")}</ul></details>`;
+}
+function templateView() {
+  return `<div class="card-grid">${templates().map((item,i)=>`<button type="button" class="option" data-action="select" data-index="${i}" aria-pressed="${i===state.selected}"><span class="cover" aria-hidden="true"></span><strong>${safe(item.name)}</strong><small>${safe(item.description)}</small><small>${safe(item.pages.join(" · "))}</small></button>`).join("")}</div><p class="group muted">${state.custom.length} of 3 personal templates saved</p>${actions(button("apply","Use selected template","primary")+button("builder","Create a template"))}`;
+}
+function builderView() {
+  return `<label class="field">Template name<input id="template-name" value="${safe(state.builderName)}" maxlength="70"></label><ul class="page-rows">${state.pages.map((name,i)=>`<li><strong>${safe(name)}</strong>${actions(button("up","Move up","",`data-index="${i}" aria-label="Move up ${safe(name)}" ${i===0?"disabled":""}`)+button("down","Move down","",`data-index="${i}" aria-label="Move down ${safe(name)}" ${i===state.pages.length-1?"disabled":""}`)+button("duplicate","Duplicate","",`data-index="${i}" aria-label="Duplicate ${safe(name)}"`)+button("remove","Delete","",`data-index="${i}" aria-label="Delete ${safe(name)}"`))}</li>`).join("")}</ul><label class="field">Page type<select id="page-type">${["Cover page","Certificate","Declaration","Acknowledgement","Abstract","Table of contents","Custom page"].map(name=>`<option>${name}</option>`).join("")}</select></label>${actions(button("add-page","Add page")+button("save-template","Save template","primary")+button("template","Back to templates"))}`;
+}
+function detailsView() {
+  return `<form data-form="details"><label class="field">Course or discipline<input name="course" value="${safe(state.course)}" placeholder="e.g. Computer Engineering" required maxlength="100"></label><label class="field">Project title<input name="title" value="${safe(state.title)}" placeholder="e.g. Campus Library Portal" required maxlength="140"></label><label class="field">Known method or tools <small>Optional. Add only what you actually used.</small><textarea name="method" rows="2" maxlength="600">${safe(state.method)}</textarea></label><div class="actions"><button class="primary">Continue</button>${button("template","Back to templates")}</div></form>`;
+}
+function questionView() {
+  return `<form data-form="question"><label class="field">Type your answer<textarea rows="3" name="answer" required maxlength="600">${safe(state.draft)}</textarea></label><div class="actions"><button class="primary">Review answer</button>${button("sample-voice","Try sample voice reply")}${button("mic-denied","Simulate mic denied","quiet")}</div></form>`;
+}
+function answerView() {
+  return `<form data-form="answer"><label class="field">${state.source==="voice"?"Sample voice transcript":"Your typed answer"}<textarea rows="3" name="answer" required maxlength="600">${safe(state.answer)}</textarea></label><div class="actions"><button class="primary">Confirm answer</button>${button("question","Back to question")}</div></form>`;
+}
+function factList() {
+  return `<dl class="fact-list"><dt>Template</dt><dd>${safe(state.template?.name??"")}</dd><dt>Course or discipline</dt><dd>${safe(state.course)}</dd><dt>Project title</dt><dd>${safe(state.title)}</dd><dt>Method or tools</dt><dd>${safe(state.method)}</dd></dl>`;
+}
+function confirmView() {
+  return `${factList()}<p class="group muted">${currentPlan().name} · ${currentPlan().summary}</p>${actions(button("generate","Generate sample report","primary")+button("details","Edit project details"))}`;
+}
+function paper() {
+  return `<article class="paper"><p class="muted">Sample report preview</p><h2>${safe(state.title)}</h2><p>${safe(state.course)}</p><p><small>Initial pages · ${safe(state.template?.pages.join(", ")??"")}</small></p><hr><div class="chips"><span class="badge ${state.progress>=3?"good":""}">${state.progress>=3?"Reviewed in demo":"Draft"}</span></div><h3>Introduction</h3><p>This report documents the project <em>${safe(state.title)}</em>.</p>${state.progress>=2||state.finished?`<h3>Methodology</h3><p>${safe(state.method)}</p>`:""}</article>`;
+}
+function generationView() {
+  if(state.offline)return `<p class="notice">Browser offline · Showing the last observed status.</p><p><strong>${safe(state.lastObserved)}</strong></p>${state.lastPreview}${actions(button("reconnect","Reconnect","primary"))}`;
+  const reconnect=button("offline","Simulate disconnect");
+  const interrupt=state.interrupted?button("retry","Resume from checkpoint","primary"):button("interrupt","Simulate worker failure","quiet");
+  return `<p><strong>${state.finished?"Sample report ready":state.interrupted?"Worker interrupted":["Preparing report","Drafting sections","Checking sample sections","Applying template"][state.progress]}</strong></p>
+  ${state.progress>0||state.finished?paper():""}
+  ${state.finished?actions(button("report","Open report preview","primary")):actions(reconnect+interrupt)}`;
+}
+function reportView() {
+  const plan=currentPlan();
+  return `${paper()}<div class="group"><h2>Export formats</h2><p class="muted">${plan.name} · ${plan.summary}</p></div>
+  ${plan.formats.length?actions(plan.formats.map((format,i)=>button("export",`Preview ${format} export`,"",`data-index="${i}"`)).join("")):'<p class="note">Hobby is preview only. Downloads are unavailable.</p>'}
+  <div class="group">${actions(button("plans","Compare plans")+button("quality",state.quality?"Hide review":"View review"))}</div>
+  ${state.quality?'<div class="note"><h3>Sample review</h3><p>Project facts come from your confirmed answers. Citation verification and external originality checking have not run in this demo.</p></div>':""}`;
+}
+const pages={template:["Choose a university template","Select a sample layout or make your own.",templateView],builder:["Create a personal template","Arrange the report’s initial pages.",builderView],details:["Tell me about your project","Project details",detailsView],question:["Adaptive question","Methodology",questionView],answer:["Confirm your answer","Check the wording before continuing.",answerView],confirm:["Review project facts","Check what will go into your sample report.",confirmView],generation:["Generating your report","Simulated generation",generationView],report:["Your report preview","Demo report",reportView]};
+function render() {
+  document.querySelectorAll("[data-nav]").forEach(el=>{
+    if(el.dataset.nav===state.view || el.dataset.nav==="home" && pages[state.view])el.setAttribute("aria-current","page");
+    else el.removeAttribute("aria-current");
+  });
+  if(!pages[state.view]){
+    main.innerHTML=({home,plans:planView,signin:authView}[state.view])();
+    return;
+  }
+  const [title,sub,body]=pages[state.view];
+  main.innerHTML=`<div class="workspace">${mentor()}<section class="panel" aria-labelledby="page-title">${heading(title,sub)}
+  <p class="bubble" id="caption" aria-live="polite">${safe(message())}</p><div id="feedback" role="status"${state.notice?' class="notice"':""}>${safe(state.notice)}</div><div id="step-body">${body()}</div>${transcript()}</section>${milestones()}</div>`;
+  main.querySelector(".steps").addEventListener("toggle",event=>{state.stepsOpen=event.currentTarget.open;});
+  main.querySelector(".transcript").addEventListener("toggle",event=>{state.transcriptOpen=event.currentTarget.open;});
+}
+function updateGeneration() {
+  if(state.view!=="generation"||state.offline)return;
+  record("AI Mentor",message());
+  const active=document.activeElement;
+  const focused=active?.closest("#step-body") ? active.dataset.action : null;
+  const caption=document.getElementById("caption");
+  const nextMessage=message();
+  const changed=caption.textContent!==nextMessage;
+  if(changed)caption.textContent=nextMessage;
+  document.getElementById("step-body").innerHTML=generationView();
+  const history=main.querySelector(".transcript");
+  if(history){history.querySelector(".history").replaceWith(document.createRange().createContextualFragment(transcript()).querySelector(".history"));}
+  if(focused)(main.querySelector(`[data-action="${focused}"]`)??main.querySelector("#step-body button"))?.focus({preventScroll:true});
+  if(changed)playCaption();
+}
+function runGeneration() {
+  clearInterval(generationTimer);
+  generationTimer=setInterval(()=>{
+    if(state.progress<3)state.progress++;
+    else {state.finished=true;clearInterval(generationTimer);}
+    updateGeneration();
+  },3000);
+}
+function showNotice(text) {
+  state.notice=text;
+  const feedback=document.getElementById("feedback");
+  if(feedback){
+    feedback.textContent=text;
+    feedback.classList.toggle("notice",Boolean(text));
+  }else{
+    const status=main.querySelector("#auth-feedback");
+    if(status){
+      status.textContent=text;
+      status.classList.toggle("notice",Boolean(text));
+    }
+  }
+}
+function pickAnswer(text,source) {
+  state.answer=text;
+  state.source=source;
+  change("answer");
+  document.querySelector('textarea[name="answer"]')?.focus();
+}
+document.addEventListener("click",event=>{
+  const target=event.target.closest("button");
+  if(!target)return;
+  if(target.dataset.nav){change(target.dataset.nav);return;}
+  const action=target.dataset.action;
+  const i=Number(target.dataset.index);
+  switch(action){
+    case "home":case "plans":case "report":case "template":case "details":change(action);break;
+    case "question":
+      state.draft=state.answer;
+      change("question");
+      break;
+    case "start":
+      clearInterval(generationTimer);
+      Object.assign(state,{selected:0,template:null,title:"",course:"",method:"",draft:"",answer:"",source:"typing",progress:0,offline:false,interrupted:false,finished:false,history:[],quality:false,resume:"template"});
+      change("template");
+      break;
+    case "resume-project":change(state.finished&&!state.offline?"report":state.resume);break;
+    case "select":
+      state.selected=i;
+      main.querySelectorAll("[data-action='select']").forEach(el=>el.setAttribute("aria-pressed",String(el===target)));
+      break;
+    case "apply":
+      state.template=structuredClone(templates()[state.selected]);
+      change("details");
+      break;
+    case "builder":
+      state.builderName="";
+      state.pages=["Cover page","Declaration","Table of contents"];
+      change("builder");
+      break;
+    case "add-page":state.pages.push(document.getElementById("page-type").value);render();main.querySelector("[data-action='add-page']").focus();break;
+    case "up":case "down":{
+      const next=i+(action==="up"?-1:1);
+      if(next>=0&&next<state.pages.length){
+        [state.pages[i],state.pages[next]]=[state.pages[next],state.pages[i]];
+        render();
+        const movedButton=main.querySelector(`[data-action="${action}"][data-index="${next}"]:not(:disabled)`);
+        (movedButton??main.querySelector(`[data-action="duplicate"][data-index="${next}"]`))?.focus();
+      }
+      break;}
+    case "duplicate":state.pages.splice(i+1,0,state.pages[i]);render();main.querySelector(`[data-action="duplicate"][data-index="${i+1}"]`).focus();break;
+    case "remove":state.pages.splice(i,1);render();main.querySelector("[data-action='add-page']").focus();break;
+    case "save-template":
+      if(state.custom.length===3){showNotice("You’ve reached the limit of three saved personal templates. Choose an existing template.");break;}
+      if(!state.builderName.trim()||!state.pages.length){showNotice("Enter a template name and add at least one page.");break;}
+      state.custom.push({name:state.builderName.trim(),description:"Personal initial-page template",pages:[...state.pages]});
+      state.selected=templates().length-1;
+      change("template");
+      break;
+    case "voice":case "replay":
+      if(!speakable()){showNotice("Speech playback is unavailable here. You can read every Mentor message and continue by typing.");break;}
+      if(action==="replay"){playCaption(true);break;}
+      state.voice=!state.voice;
+      if(state.voice){updateVoice();playCaption();}
+      else speechOff();
+      break;
+    case "sample-voice":pickAnswer(/psychology|medicine|mbbs|clinical|health/.test(state.course.toLowerCase())?"I used a descriptive study design.":/law|llb|legal/.test(state.course.toLowerCase())?"I compared published case law in my jurisdiction.":"I built a web interface and tested the main user flow manually.","voice");break;
+    case "mic-denied":
+      showNotice("Microphone access was denied in this simulation. You can type your answer below.");
+      document.querySelector("textarea")?.focus();
+      break;
+    case "generate":
+      Object.assign(state,{progress:0,offline:false,interrupted:false,finished:false});
+      change("generation");runGeneration();break;
+    case "offline":
+      state.lastObserved=main.querySelector("#step-body p strong")?.textContent??"Preparing report";
+      state.lastPreview=state.progress>0?paper():"";
+      state.offline=true;
+      change("generation");
+      break;
+    case "reconnect":state.offline=false;change("generation");break;
+    case "interrupt":clearInterval(generationTimer);state.interrupted=true;change("generation");break;
+    case "retry":state.interrupted=false;change("generation");runGeneration();break;
+    case "pick-plan":state.plan=target.dataset.value;render();main.querySelector(`[data-value="${state.plan}"]`)?.focus();break;
+    case "export":showNotice(`${currentPlan().formats[i]} is available on ${state.plan}. This prototype previews the export choice.`);break;
+    case "quality":state.quality=!state.quality;render();main.querySelector('[data-action="quality"]')?.focus();break;
+    case "google":case "mobile":case "auth-back":
+      state.auth=action==="auth-back"?"":action;
+      change("signin");
+      break;
+  }
+  if(pages[state.view])state.resume=state.view;
+});
+main.addEventListener("input",event=>{
+  const field=event.target;
+  if(field.id==="template-name")state.builderName=field.value;
+  if(field.closest('[data-form="question"]')&&field.name==="answer")state.draft=field.value;
+  if(field.closest('[data-form="answer"]')&&field.name==="answer")state.answer=field.value;
+  if(field.closest('[data-form="details"]')&&["title","course","method"].includes(field.name))state[field.name]=field.value;
+});
+main.addEventListener("submit",event=>{
+  event.preventDefault();
+  const form=event.target;
+  const data=new FormData(form);
+  switch(form.dataset.form){
+    case "details":{
+      const title=data.get("title").trim(),course=data.get("course").trim();
+      if(!title||!course){showNotice("Enter your course and project title.");return;}
+      Object.assign(state,{title,course,method:data.get("method").trim()});
+      record("You",`${course} · ${title}${state.method?" · "+state.method:""}`);
+      change(state.method?"confirm":"question");
+      break;}
+    case "question":{
+      const answer=data.get("answer").trim();
+      if(answer)pickAnswer(answer,"typing");
+      else showNotice("Enter an answer to continue.");
+      break;}
+    case "answer":{
+      const answer=data.get("answer").trim();
+      if(!answer){showNotice("Enter an answer to confirm.");return;}
+      state.method=answer;
+      state.draft=answer;
+      record("You",answer);
+      change("confirm");
+      break;}
+    case "mobile":
+      state.auth="otp";change("signin");break;
+    case "otp":
+      if(data.get("code")==="123456"){state.auth="";change("home");}
+      else showNotice("That code doesn’t match. Try 123456.");
+      break;
+  }
+  if(pages[state.view])state.resume=state.view;
+});
+render();
+</script>
+</body>
+</html>

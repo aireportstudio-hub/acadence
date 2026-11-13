@@ -1,0 +1,31 @@
+# Acadence Environment Variable Example | 2026-11-12
+# Copy to .env locally (Cloudflare frontend: .dev.vars). Never commit real credentials.
+# The names not explicitly named by the provider are ACADENCE-PROPOSED conventions.
+# Core settings should be resolved for the phase using this module; conditional ones can stay blank.
+
+# CORE | PUBLIC | Public URL for the web app; okay to expose
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+
+# CORE | PUBLIC | Browser-facing API path on same origin
+NEXT_PUBLIC_API_BASE_PATH=/api
+
+# WHEN-FEATURE-ENABLED | PUBLIC | Public feature visibility flag, NOT authorization
+NEXT_PUBLIC_ENABLE_VOICE=false
+
+# WHEN-FEATURE-ENABLED | PUBLIC | Public feature visibility only
+NEXT_PUBLIC_ENABLE_AI_IMAGES=false
+
+# CONDITIONAL | PUBLIC | Cloudflare Turnstile public site key, if anti-bot protection enabled
+NEXT_PUBLIC_TURNSTILE_SITE_KEY=
+
+# CORE | CONFIG | Private server-side URL for selected BFF/API ingress design
+API_GATEWAY_ORIGIN=http://localhost:8000
+
+# CONDITIONAL | CONFIG | Security decision pending: Worker-to-GCP authentication/ingress; do not deploy public unprotected backend
+EDGE_TO_API_AUTH_MODE=PENDING_DESIGN
+
+# WHEN-FEATURE-ENABLED | CONFIG | Server-side tracing/error monitoring
+SENTRY_DSN=
+
+# WHEN-FEATURE-ENABLED | PUBLIC | Public DSN only if Sentry browser SDK is enabled; not a secret
+NEXT_PUBLIC_SENTRY_DSN=

@@ -1,0 +1,91 @@
+/* Acadence UI/UX Design System v1.0 — design tokens, not a completed frontend. */
+:root {
+  color-scheme: light;
+  --ac-primary: #6D28D9;
+  --ac-primary-hover: #5B21B6;
+  --ac-primary-strong: #5B21B6;
+  --ac-accent: #A78BFA;
+  --ac-lavender-100: #EDE9FE;
+  --ac-lavender-200: #DDD6FE;
+  --ac-canvas: #F9F7FF;
+  --ac-surface: #FFFFFF;
+  --ac-surface-muted: #F4F0FF;
+  --ac-text: #251B40;
+  --ac-text-muted: #5E5574;
+  --ac-border: #DED6F2;
+  --ac-success: #137C4A;
+  --ac-danger: #B42318;
+  --ac-warning: #915400;
+  --ac-focus: #6D28D9;
+  --ac-hero-gradient: linear-gradient(135deg, #F9F7FF 0%, #EDE9FE 54%, #D8C7FF 100%);
+  --ac-action-gradient: linear-gradient(110deg, #7C3AED 0%, #5B21B6 100%);
+  --ac-radius-control: 12px;
+  --ac-radius-card: 16px;
+  --ac-radius-panel: 22px;
+  --ac-shadow-card: 0 8px 28px rgba(50, 28, 97, 0.09);
+  --ac-ring: 0 0 0 3px rgba(109, 40, 217, 0.22);
+  --ac-font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ac-space-1: 4px;
+  --ac-space-2: 8px;
+  --ac-space-3: 12px;
+  --ac-space-4: 16px;
+  --ac-space-5: 20px;
+  --ac-space-6: 24px;
+  --ac-space-8: 32px;
+}
+
+.acadence-app {
+  background: var(--ac-canvas);
+  color: var(--ac-text);
+  font: 400 16px/1.5 var(--ac-font-ui);
+  min-width: 0;
+}
+.acadence-card {
+  background: var(--ac-surface);
+  border: 1px solid var(--ac-border);
+  border-radius: var(--ac-radius-card);
+  box-shadow: var(--ac-shadow-card);
+}
+.acadence-hero { background: var(--ac-hero-gradient); }
+.acadence-button-primary {
+  color: white;
+  background: var(--ac-action-gradient);
+  border: 0;
+  border-radius: var(--ac-radius-control);
+  min-height: 44px;
+  padding: 10px 16px;
+  font: 600 1rem/1.4 var(--ac-font-ui);
+}
+.acadence-button-primary:focus-visible,
+.acadence-control:focus-visible {
+  outline: 3px solid var(--ac-focus);
+  outline-offset: 3px;
+}
+.acadence-control { min-height: 44px; }
+.acadence-document-canvas {
+  color: #111827;
+  background: #FFFFFF;
+  overflow: auto; /* pan/zoom only inside document viewport */
+  max-width: 100%;
+}
+.acadence-mentor-caption { color: var(--ac-text); background: var(--ac-surface); }
+.acadence-sticky-composer {
+  position: sticky;
+  bottom: env(safe-area-inset-bottom, 0px);
+  z-index: 20;
+  background: var(--ac-canvas);
+}
+@media (prefers-reduced-motion: reduce) {
+  .acadence-robot-motion, .acadence-waveform-motion { animation: none !important; transition: none !important; }
+}
+@media (max-width: 767px) {
+  .acadence-desktop-sidebar { display: none; }
+  .acadence-page-gutter { padding-inline: 16px; }
+  .acadence-mentor-grid { display: grid; grid-template-columns: minmax(0, 1fr); }
+}
+@media (min-width: 768px) and (max-width: 1023px) {
+  .acadence-mentor-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); }
+}
+@media (min-width: 1440px) {
+  .acadence-mentor-grid { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(440px, 2fr) minmax(240px, 1fr); }
+}
