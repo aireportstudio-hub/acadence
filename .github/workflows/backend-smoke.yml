@@ -21,22 +21,102 @@ permissions:
   contents: read
 
 jobs:
+  changed-services:
+    runs-on: ubuntu-24.04
+    outputs:
+      services: ${{ steps.select.outputs.services }}
+      has-services: ${{ steps.select.outputs.has-services }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Select affected services
+        id: select
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+
+          services = [
+              "ai-orchestration-service",
+              "auth-service",
+              "billing-service",
+              "document-service",
+              "notification-service",
+              "project-service",
+              "quality-service",
+              "template-service",
+              "visual-ai-service",
+          ]
+
+          def git(*args):
+              return subprocess.run(
+                  ["git", *args], check=True, stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+              ).stdout
+
+          try:
+              event = os.environ["EVENT_NAME"]
+              if event == "workflow_dispatch":
+                  selected = services
+              else:
+                  if git("rev-parse", "--is-shallow-repository").strip() != b"false":
+                      raise ValueError("repository history is shallow")
+                  if event == "push":
+                      base, head = os.environ["PUSH_BEFORE"], os.environ["PUSH_AFTER"]
+                  elif event == "pull_request":
+                      base, head = os.environ["PR_BASE"], os.environ["PR_HEAD"]
+                  else:
+                      raise ValueError(f"unsupported event: {event}")
+                  for revision in (base, head):
+                      if len(revision) != 40 or any(c not in "0123456789abcdef" for c in revision) or set(revision) == {"0"}:
+                          raise ValueError("missing or invalid commit SHA")
+                      git("cat-file", "-e", f"{revision}^{{commit}}")
+                  if event == "pull_request":
+                      bases = git("merge-base", "--all", base, head).splitlines()
+                      if len(bases) != 1:
+                          raise ValueError("pull request does not have a unique merge base")
+                      base = bases[0].decode("ascii")
+                  paths = git("diff", "--no-renames", "--name-only", "-z", base, head, "--").split(b"\0")
+                  changed = [os.fsdecode(path) for path in paths if path]
+                  shared = any(
+                      path.startswith("packages/api-contracts/")
+                      or path in {"scripts/test-services.ps1", ".github/workflows/backend-smoke.yml"}
+                      for path in changed
+                  )
+                  selected = services if shared else [
+                      service for service in services
+                      if any(path.startswith(f"services/{service}/") for path in changed)
+                  ]
+          except (OSError, ValueError, subprocess.CalledProcessError) as error:
+              print(f"::warning::Could not reliably determine changed services ({error}); running all services.")
+              selected = services
+
+          print(f"Selected services: {', '.join(selected) or '(none)'}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              print(f"services={json.dumps(selected, separators=(',', ':'))}", file=output)
+              print(f"has-services={str(bool(selected)).lower()}", file=output)
+          PY
+
   backend-unit:
+    needs: changed-services
+    if: needs.changed-services.outputs.has-services == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        service:
-          - ai-orchestration-service
-          - auth-service
-          - billing-service
-          - document-service
-          - notification-service
-          - project-service
-          - quality-service
-          - template-service
-          - visual-ai-service
+        service: ${{ fromJSON(needs.changed-services.outputs.services) }}
     defaults:
       run:
         working-directory: services/${{ matrix.service }}
@@ -58,14 +138,22 @@ jobs:
         run: python -m unittest discover -s . -p "test_*.py" -v
 
   backend-smoke:
+    needs: changed-services
+    if: needs.changed-services.outputs.has-services == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.changed-services.outputs.services) }}
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Build and check all nine backend services
+      - name: Build and check service
         shell: pwsh
-        run: ./scripts/test-services.ps1
+        env:
+          SERVICE: ${{ matrix.service }}
+        run: ./scripts/test-services.ps1 -Service $env:SERVICE
