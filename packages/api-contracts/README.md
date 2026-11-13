@@ -1,0 +1,23 @@
+# API contracts
+
+## Error response v1
+
+The P01 error response is defined in
+[`error-response.v1.schema.json`](./error-response.v1.schema.json). For example:
+
+```json
+{
+  "code": "NOT_FOUND",
+  "message": "Request could not be completed.",
+  "request_id": "req_404",
+  "details": {}
+}
+```
+
+The body `request_id` must match the `X-Request-ID` response header (here,
+`req_404`). This header/body rule is verified by service tests; JSON Schema
+validates the body only. The `details` object is extensible.
+
+P01 foundation verification: Ajv validated the schema, example, and boundary
+cases; the Project Service error tests passed. Contract compatibility and
+breaking-change checks remain open.

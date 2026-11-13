@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Acadence error response v1",
+  "type": "object",
+  "required": ["code", "message", "request_id", "details"],
+  "properties": {
+    "code": {
+      "type": "string"
+    },
+    "message": {
+      "type": "string"
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "not": {
+        "pattern": "[^A-Za-z0-9_-]"
+      }
+    },
+    "details": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}
