@@ -1,0 +1,48 @@
+name: Worker checks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "workers/report-generation/**"
+      - "workers/document-export/**"
+      - ".github/workflows/worker-smoke.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "workers/report-generation/**"
+      - "workers/document-export/**"
+      - ".github/workflows/worker-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  worker-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        worker:
+          - report-generation
+          - document-export
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.13"
+
+      - name: Run worker unit tests
+        run: python -m unittest discover -s workers/${{ matrix.worker }} -p "test_*.py" -v
+
+      - name: Build worker image
+        run: docker build -t acadence-${{ matrix.worker }} workers/${{ matrix.worker }}
+
+      - name: Run worker smoke check
+        run: docker run --rm --network none acadence-${{ matrix.worker }} --smoke-check
