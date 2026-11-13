@@ -47,3 +47,23 @@ curl -i -N http://127.0.0.1:4313/api/probe
 ```
 
 The route emits a synthetic progress stream and a sample cookie. On Windows PowerShell, use `curl.exe` if `curl` is an alias. Production auth, provider accounts, and deployable service implementations belong to later roadmap tasks.
+
+## P01 backend checks
+
+On 13 November 2026, all nine service unit suites passed locally with Python
+3.13.17 (nine tests per service). From the repository root, run each suite in
+a separate process after installing its `requirements-dev.txt`:
+
+```powershell
+Get-ChildItem .\services -Directory | ForEach-Object {
+    .\.venv\Scripts\python.exe -m unittest discover -s $_.FullName -p "test_*.py" -v
+    if ($LASTEXITCODE -ne 0) { throw "Tests failed for $($_.Name)" }
+}
+```
+
+The suites include startup, error handling, and isolated production OpenAPI
+checks for the service title and health/readiness 200 responses. The backend
+workflow runs the suites on Ubuntu with Python 3.13 alongside the existing
+Docker smoke job; its first GitHub run is still needed to verify CI. This is
+only part of P01, not its completion gate. Cloudflare-to-Cloud Run ingress
+authentication remains an open P00/P01 decision.
