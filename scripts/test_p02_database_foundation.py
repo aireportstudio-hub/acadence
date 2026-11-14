@@ -128,7 +128,7 @@ def bootstrap_services(
 
 
 def assert_baseline_versions(
-    admin_url: str, expected_schemas: set[str], project_has_table: bool = False
+    admin_url: str, expected_schemas: set[str], persistence_tables: bool = False
 ) -> None:
     with psycopg.connect(admin_url, autocommit=True) as connection:
         for _, schema, _ in SERVICES:
@@ -146,8 +146,8 @@ def assert_baseline_versions(
                 require(
                     version
                     == [(
-                        "0002_project_projects"
-                        if schema == "project" and project_has_table
+                        {"auth": "0002_auth_users", "project": "0002_project_projects"}[schema]
+                        if schema in ("auth", "project") and persistence_tables
                         else f"0001_{schema}_baseline",
                     )],
                     f"{schema} has unexpected migration version(s): {version!r}",
@@ -406,11 +406,11 @@ def verify_independent_rollback(
         service_dir = ROOT / "services" / service_name
         run_migration(service_dir, urls[schema], "downgrade", "base")
         assert_baseline_versions(
-            admin_url, {s for _, s, _ in SERVICES} - {schema}, project_has_table=True
+            admin_url, {s for _, s, _ in SERVICES} - {schema}, persistence_tables=True
         )
         run_migration(service_dir, urls[schema], "upgrade", "head")
         assert_baseline_versions(
-            admin_url, {s for _, s, _ in SERVICES}, project_has_table=True
+            admin_url, {s for _, s, _ in SERVICES}, persistence_tables=True
         )
         print(f"PASS {schema}: independent downgrade and reapply")
 
@@ -449,10 +449,9 @@ def main() -> None:
     schemas = {schema for _, schema, _ in SERVICES}
     assert_baseline_versions(admin_url, schemas)
     assert_only_baseline_tables(admin_url)
-    run_migration(
-        ROOT / "services" / "project-service", migration_urls["project"], "upgrade", "head"
-    )
-    assert_baseline_versions(admin_url, schemas, project_has_table=True)
+    for service_name, schema in (("auth-service", "auth"), ("project-service", "project")):
+        run_migration(ROOT / "services" / service_name, migration_urls[schema], "upgrade", "head")
+    assert_baseline_versions(admin_url, schemas, persistence_tables=True)
     assert_role_configuration(admin_url)
     create_permission_fixtures(admin_url)
     verify_owner_boundaries(admin_url)

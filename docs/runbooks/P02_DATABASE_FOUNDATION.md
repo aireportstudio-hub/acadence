@@ -1,7 +1,7 @@
 # P02 local database foundation
 
 This runbook covers the schema, role and Alembic baseline foundation and the
-first Project persistence revision. It does not mark the full P02 gate complete.
+first Auth and Project persistence revisions. It does not mark the full P02 gate complete.
 
 ## Local verification
 
@@ -19,7 +19,7 @@ Remove-Item Env:\P02_TEST_ADMIN_DATABASE_URL
 
 The test database must be discarded after the run. The script does not create or
 remove containers, volumes, or databases. It bootstraps all nine service schemas,
-runs every empty baseline, then applies the Project persistence revision and
+runs every empty baseline, then applies the Auth and Project persistence revisions and
 verifies that each version table is service-owned.
 Temporary `permission_probe` tables and cross-schema `USAGE`/`SELECT` grants
 exist only in this disposable database. The test checks runtime CRUD on its
@@ -60,7 +60,16 @@ downgrade/reapply. Both containers were removed. See the
 [Project Service README](../../services/project-service/README.md) for the
 Project migration and test details.
 
-## Proposed stable Auth user ID contract
+On 2026-11-14, separate disposable PostgreSQL 16 Alpine containers passed the
+Auth and Project suites (11 tests each) and the all-service verifier with both
+persistence revisions. Auth's UUIDv4 survived commit and a separate-connection
+read; Project stored it as an owner reference, and its runtime role could not
+write `auth.users`. Auth's new revision was downgraded and reapplied; runtime
+permissions and caller-managed rollback were checked. The Auth Docker image
+passed health, readiness and persistence-module import checks. The disposable
+containers and volumes were removed; Google Cloud and Neon were not contacted.
+
+## Stable Auth user ID contract
 
 The approved architecture assigns users and verified identity bindings to Auth,
 and defines `user_identities.user_id`, unique provider subjects, and unique
@@ -69,10 +78,11 @@ The P02 roadmap requires stable user identifiers, and Project migration
 `0002_project_projects` defines `project.projects.owner_user_id` as
 non-nullable PostgreSQL `UUID`.
 
-**Proposal, pending explicit approval:** Auth issues one permanent, immutable
-UUIDv4 as each user's internal ID. Google OIDC identities map to that ID by
-their provider and provider subject; verified phone identities map to the same
-ID by normalized E.164 phone number. Auth owns those identity bindings.
+**Decision:** Auth issues one permanent, immutable UUIDv4 as each user's
+internal ID. The Auth-owned `auth.users` table persists the ID and creation
+timestamp. Google OIDC identities are intended to map to that ID by their
+provider and provider subject; verified phone identities are intended to map
+to the same ID by normalized E.164 phone number. Auth owns those identity bindings.
 Linking Google and phone identities to an existing account requires verifying
 both identities; a provider subject or phone number is not itself the internal
 user ID. This allows either login method to resolve to the same Auth user
@@ -82,15 +92,14 @@ Project stores the Auth-issued value in `owner_user_id` as an opaque owner
 reference. It does not resolve Google/phone identities or create a cross-schema
 foreign key; authorization uses the verified Auth principal's user ID. UUIDv4
 is compatible with the migration's UUID column, which does not itself enforce
-the UUID version. This is a proposed cross-service contract, not an approved
-or implemented Auth behavior; Auth identity/session tables and P03 identity
-linking remain future work.
+the UUID version. Auth identity/session tables and P03 identity linking remain
+future work; no sign-in behavior is implemented here.
 
 ## Remaining P02 work
 
 This local foundation does not complete P02. Remaining product persistence (including
 versioned contracts, audit/event patterns, document metadata and the
-orchestration job ledger), retention ownership, formal approval and
-implementation of the stable-ID contract, and backup/restore drills remain
+orchestration job ledger), retention ownership, remaining stable report-ID
+and cross-service lookup contracts, and backup/restore drills remain
 pending. No production credentials, cloud migrations, Neon pooling, or cloud
 backup/restore behavior were tested.

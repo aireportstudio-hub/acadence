@@ -6,8 +6,14 @@ non-login schema owner, a separate non-inheriting Alembic login, and a distinct
 runtime login. The migration role can assume only the Auth schema owner; the
 runtime role has schema `USAGE` only and cannot create objects. Future table
 migrations must grant the runtime role only the table/sequence operations that
-the Auth API needs. No identity tables are introduced by this baseline; Google
-OIDC and mobile OTP persistence are deferred to their own implementation step.
+the Auth API needs. Revision `0002_auth_users` creates `auth.users` with an
+Auth-issued UUIDv4 and a creation timestamp, and grants runtime only `SELECT`
+and `INSERT`. Identity bindings, sessions, Google OIDC and mobile OTP are
+deferred to their own implementation steps.
+
+The internal `users.py` functions take a runtime psycopg connection.
+`create_user` inserts a user and `get_user` reads by ID. The caller owns the
+transaction and must commit on success; neither function exposes an API route.
 
 Set passwords for both login roles through the PostgreSQL administrator's
 interactive `\password` command or an approved secret manager. Keep both
@@ -28,12 +34,13 @@ From `services/auth-service`, apply or roll back the current revision with:
 
 ```powershell
 python -m alembic upgrade head
-python -m alembic downgrade base
+python -m alembic downgrade 0001_auth_baseline
 ```
 
 The database must have been provisioned first, and
 `MIGRATION_DATABASE_URL` must identify the migration login. The Auth Service
-container does not run migrations at startup.
+container does not run migrations at startup. Downgrading this revision drops
+`auth.users` and its data; use it only when that data can be discarded or restored.
 
 For a disposable native local PostgreSQL database, create a new database, then
 run the following from `services/auth-service` as its administrator:
@@ -87,9 +94,9 @@ revision `0001_auth_baseline` remained unchanged through Project's downgrade
 and reapply. The container and its anonymous volume were removed.
 
 P02 follow-ups remain: Auth identity/session tables and narrowly scoped
-production grants, migrations for the other seven schemas, Neon credentials
-and pooling, formal approval and implementation of the proposed stable UUIDv4
-user ID contract, and backup/restore drills. The proposal and P03 Google/phone
+production grants, remaining product persistence, Neon credentials
+and pooling, and backup/restore drills. The stable UUIDv4 user ID contract and
+future P03 Google/phone
 identity mapping are documented in the
 [P02 database foundation runbook](../../docs/runbooks/P02_DATABASE_FOUNDATION.md).
 No cloud migration, Google sign-in, or OTP behavior is implemented here.

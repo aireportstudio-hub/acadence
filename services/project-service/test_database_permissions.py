@@ -13,6 +13,10 @@ from projects import create_project, get_project
 
 SERVICE_DIR = Path(__file__).resolve().parent
 AUTH_DIR = SERVICE_DIR.parent / "auth-service"
+sys.path.insert(0, str(AUTH_DIR))
+from users import create_user, get_user
+sys.path.pop(0)
+
 ADMIN_DATABASE_URL = os.environ.get("PROJECT_TEST_ADMIN_DATABASE_URL")
 PROJECT_RUNTIME_DATABASE_URL = os.environ.get("PROJECT_TEST_RUNTIME_DATABASE_URL")
 AUTH_RUNTIME_DATABASE_URL = os.environ.get("AUTH_TEST_RUNTIME_DATABASE_URL")
@@ -79,7 +83,7 @@ class ProjectDatabaseMigrationTest(unittest.TestCase):
             )
             self.assertEqual(
                 connection.execute("SELECT version_num FROM auth.alembic_version").fetchone(),
-                ("0001_auth_baseline",),
+                ("0002_auth_users",),
             )
             self.assertEqual(
                 connection.execute("SELECT version_num FROM project.alembic_version").fetchone(),
@@ -98,7 +102,7 @@ class ProjectDatabaseMigrationTest(unittest.TestCase):
         with psycopg.connect(ADMIN_DATABASE_URL, autocommit=True) as connection:
             self.assertEqual(
                 connection.execute("SELECT version_num FROM auth.alembic_version").fetchone(),
-                ("0001_auth_baseline",),
+                ("0002_auth_users",),
             )
             self.assertIsNone(
                 connection.execute("SELECT to_regclass('project.projects')").fetchone()[0]
@@ -173,7 +177,14 @@ class ProjectDatabaseMigrationTest(unittest.TestCase):
                 connection.execute("INSERT INTO project.permission_probe VALUES ('denied')")
             connection.execute("RESET ROLE")
 
-        owner_id = uuid4()
+        with psycopg.connect(AUTH_RUNTIME_DATABASE_URL) as connection:
+            connection.execute("SET ROLE acadence_auth_runtime")
+            user = create_user(connection)
+        with psycopg.connect(AUTH_RUNTIME_DATABASE_URL, autocommit=True) as connection:
+            connection.execute("SET ROLE acadence_auth_runtime")
+            self.assertEqual(get_user(connection, user.id), user)
+        owner_id = user.id
+        self.assertEqual(owner_id.version, 4)
         other_owner_id = uuid4()
         with psycopg.connect(PROJECT_RUNTIME_DATABASE_URL) as connection:
             connection.execute("SET ROLE acadence_project_runtime")
@@ -197,6 +208,9 @@ class ProjectDatabaseMigrationTest(unittest.TestCase):
                 "UPDATE project.projects SET title = 'denied'",
                 "DELETE FROM project.projects",
                 "ALTER TABLE project.projects ADD COLUMN forbidden text",
+                "INSERT INTO auth.users (id) VALUES ('00000000-0000-4000-8000-000000000001')",
+                "UPDATE auth.users SET created_at = now()",
+                "DELETE FROM auth.users",
             ):
                 with self.assertRaises(psycopg.errors.InsufficientPrivilege):
                     connection.execute(operation)

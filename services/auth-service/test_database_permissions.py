@@ -3,8 +3,13 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from uuid import uuid4
 
 import psycopg
+from psycopg import sql
+from psycopg.conninfo import conninfo_to_dict
+
+from users import create_user, get_user
 
 SERVICE_DIR = Path(__file__).resolve().parent
 BOOTSTRAP_PATH = SERVICE_DIR / "database" / "bootstrap.sql"
@@ -22,6 +27,18 @@ class AuthDatabaseMigrationTest(unittest.TestCase):
     def test_empty_database_migration_and_role_boundaries(self):
         with psycopg.connect(ADMIN_DATABASE_URL, autocommit=True) as connection:
             connection.execute(BOOTSTRAP_PATH.read_text(encoding="utf-8"), prepare=False)
+            if os.environ.get("AUTH_TEST_SET_ROLE_PASSWORDS") == "1":
+                for role, url in (
+                    ("acadence_auth_runtime", RUNTIME_DATABASE_URL),
+                    ("acadence_auth_migrator", os.environ["MIGRATION_DATABASE_URL"]),
+                ):
+                    conninfo = url.replace("postgresql+psycopg://", "postgresql://")
+                    password = conninfo_to_dict(conninfo)["password"]
+                    connection.execute(
+                        sql.SQL("ALTER ROLE {} PASSWORD {}").format(
+                            sql.Identifier(role), sql.Literal(password)
+                        )
+                    )
 
         result = subprocess.run(
             [sys.executable, "-m", "alembic", "upgrade", "head"],
@@ -51,7 +68,16 @@ class AuthDatabaseMigrationTest(unittest.TestCase):
             version = connection.execute(
                 "SELECT version_num FROM auth.alembic_version"
             ).fetchone()
-            self.assertEqual(version, ("0001_auth_baseline",))
+            self.assertEqual(version, ("0002_auth_users",))
+            privileges = connection.execute(
+                "SELECT has_table_privilege('acadence_auth_runtime', 'auth.users', p) "
+                "FROM unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', "
+                "'TRUNCATE', 'REFERENCES', 'TRIGGER']) AS p"
+            ).fetchall()
+            self.assertEqual(
+                privileges,
+                [(True,), (True,), (False,), (False,), (False,), (False,), (False,)],
+            )
 
             identity = connection.execute(
                 "SELECT current_user, session_user"
@@ -84,8 +110,49 @@ class AuthDatabaseMigrationTest(unittest.TestCase):
             )
             connection.execute("RESET ROLE")
 
+        for revision in ("0001_auth_baseline", "head"):
+            result = subprocess.run(
+                [
+                    sys.executable, "-m", "alembic",
+                    "downgrade" if revision != "head" else "upgrade", revision,
+                ],
+                cwd=SERVICE_DIR,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            with psycopg.connect(ADMIN_DATABASE_URL, autocommit=True) as connection:
+                exists = connection.execute("SELECT to_regclass('auth.users')").fetchone()[0]
+                self.assertEqual(exists is not None, revision == "head")
+                version = connection.execute(
+                    "SELECT version_num FROM auth.alembic_version"
+                ).fetchone()
+                self.assertEqual(
+                    version, ("0002_auth_users" if revision == "head" else revision,)
+                )
+
+        with psycopg.connect(RUNTIME_DATABASE_URL) as connection:
+            connection.execute("SET ROLE acadence_auth_runtime")
+            rolled_back = create_user(connection)
+            connection.rollback()
+            connection.execute("SET ROLE acadence_auth_runtime")
+            user = create_user(connection)
+
+        self.assertEqual(user.id.version, 4)
+        self.assertIsNotNone(user.created_at.tzinfo)
         with psycopg.connect(RUNTIME_DATABASE_URL, autocommit=True) as connection:
             connection.execute("SET ROLE acadence_auth_runtime")
+            self.assertEqual(get_user(connection, user.id), user)
+            self.assertIsNone(get_user(connection, rolled_back.id))
+            self.assertIsNone(get_user(connection, uuid4()))
+            for operation in (
+                "UPDATE auth.users SET created_at = now()",
+                "DELETE FROM auth.users",
+                "ALTER TABLE auth.users ADD COLUMN forbidden text",
+            ):
+                with self.assertRaises(psycopg.errors.InsufficientPrivilege):
+                    connection.execute(operation)
             self.assertTrue(
                 connection.execute(
                     "SELECT has_schema_privilege(current_user, 'auth', 'USAGE')"
