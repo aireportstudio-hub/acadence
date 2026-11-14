@@ -2,12 +2,14 @@
   "name": "acadence-p00-tooling",
   "version": "1.0.0",
   "scripts": {
-    "check": "node probe.mjs"
+    "check": "node probe.mjs",
+    "test:auth-db": "node test-auth-migrations.mjs"
   },
   "type": "module",
   "dependencies": {
     "@dnd-kit/sortable": "10.0.0",
     "@electric-sql/pglite": "0.5.16",
+    "@electric-sql/pglite-socket": "0.2.19",
     "@tiptap/core": "3.33.1",
     "@tiptap/html": "3.33.1",
     "@tiptap/starter-kit": "3.33.1",
