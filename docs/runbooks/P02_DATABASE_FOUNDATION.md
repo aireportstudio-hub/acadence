@@ -1,7 +1,8 @@
 # P02 local database foundation
 
-This runbook covers the schema, role and Alembic baseline foundation and the
-first Auth and Project persistence revisions. It does not mark the full P02 gate complete.
+This runbook records the schema, role and Alembic baseline foundation and the
+Auth, Project, AI Orchestration, and Document persistence revisions. It does
+not mark the full P02 gate complete.
 
 ## Local verification
 
@@ -19,14 +20,18 @@ Remove-Item Env:\P02_TEST_ADMIN_DATABASE_URL
 
 The test database must be discarded after the run. The script does not create or
 remove containers, volumes, or databases. It bootstraps all nine service schemas,
-runs every empty baseline, then applies the Auth and Project persistence revisions and
-verifies that each version table is service-owned.
+runs each empty baseline, then upgrades every service to head. The Auth,
+Project, AI Orchestration, and Document persistence revisions are included.
+It verifies that each version table is service-owned.
 Temporary `permission_probe` tables and cross-schema `USAGE`/`SELECT` grants
 exist only in this disposable database. The test checks runtime CRUD on its
 explicitly granted table, denies foreign-schema writes and own-schema DDL,
 denies migration metadata access, and checks that owner and migration logins
-cannot cross-write. It downgrades and reapplies each of the seven new baselines
-while verifying that the other eight remain at their recorded versions.
+cannot cross-write. It creates and reads the new report-job, document metadata,
+audit and event fixtures through the owning runtime logins; verifies ordered
+progress cursors and duplicate-event rejection; and explicitly denies writes
+between the Project, Orchestration, and Document data schemas. It downgrades
+and reapplies each of the nine service migrations independently.
 
 ## Evidence recorded
 
@@ -95,11 +100,48 @@ is compatible with the migration's UUID column, which does not itself enforce
 the UUID version. Auth identity/session tables and P03 identity linking remain
 future work; no sign-in behavior is implemented here.
 
+## P02 persistence additions (2026-11-14)
+
+**Report identifiers:** The approved architecture assigns report-job lifecycle
+and checkpoint/retry/progress state to AI Orchestration. The roadmap and
+architecture do not assign an authoritative issuer or format to `report_id`.
+The persistence schema stores the Orchestration-owned `job_id` as a PostgreSQL
+UUID and stores `report_id` as a non-empty opaque string, without a cross-schema
+foreign key or UUID-format assumption. Project, owner, and Billing reservation
+IDs are opaque references. This storage choice does not decide which service
+creates or owns the report record; that contract remains open. `report_id`
+lookup must use a future API or verified projection.
+
+**Event contract:** Project's `project.facts.updated` v1 event is the only
+producer/consumer pair explicitly named for this work in the architecture:
+Project writes the transactional outbox and AI Orchestration records delivery
+deduplication. The event carries opaque project/fact IDs and the fact snapshot
+version, not fact values. Its uniqueness key is `(producer_service, event_id)`.
+Transport, publish ordering, retry/dead-letter policy, retention, actor-context
+authorization, and the consumer's stale-output transaction remain undecided;
+no publisher, subscriber, or public API is implemented here.
+
+**Document metadata:** Document owns opaque metadata IDs, immutable version
+references, SHA-256 checksums, private R2 bucket/key references, and append-only
+access history. R2 object keys are not URLs. Local fixtures verify metadata
+constraints and separate-connection create/read only; they do not prove live
+R2 uploads/downloads, signed URL authorization or expiry, cleanup, deletion,
+or retention.
+
+**Verification evidence:** The final verifier run on a disposable local
+PostgreSQL 16 Alpine container passed all nine fresh baseline/head migrations,
+all nine independent downgrade/reapplies, the persistence fixtures and event
+deduplication, and cross-schema write denial. Project Service tests passed
+with one environment-dependent database integration test skipped; its two
+event-contract cases ran. AI Orchestration and Document Service tests passed.
+Python compilation, `git diff --check`, and the new-file whitespace scan passed.
+The PostgreSQL container was removed. Google Cloud, Neon, and R2 were not
+contacted; no billing was enabled.
+
 ## Remaining P02 work
 
-This local foundation does not complete P02. Remaining product persistence (including
-versioned contracts, audit/event patterns, document metadata and the
-orchestration job ledger), retention ownership, remaining stable report-ID
-and cross-service lookup contracts, and backup/restore drills remain
-pending. No production credentials, cloud migrations, Neon pooling, or cloud
-backup/restore behavior were tested.
+This batch does not complete P02. Remaining work includes the report-record
+issuer/lookup contract, additional service API/event contracts and event
+delivery implementation, live R2 upload/download and signed-URL verification,
+retention/deletion ownership, production Neon and cloud migration checks, and
+backup/restore drills. No production credentials or cloud services were used.

@@ -96,7 +96,7 @@ The remaining P01 execution gates and required evidence are consolidated in the 
   report identifiers and cross-service lookup remain open.
 - [ ] Add versioned API/event schemas, access/audit logs, outbox/inbox and deduplication only where asynchronous cross-service guarantees are required.
 - [ ] Add document/R2 metadata versioning, checksum, signed URLs, immutable version references, cleanup/deletion and access logging.
-- [ ] Add durable job ledger, attempt history, progress event sequence, section version and checkpoint reference entities in orchestration schema.
+- [x] Add durable job ledger, attempt history, progress event sequence, section version and checkpoint reference entities in orchestration schema.
 - [ ] Define ownership, retention and backup/restore drills; prove service A cannot insert/update service B's table.
 
 **Gate P02:** Migrations work from an empty database, can be rolled forward independently, owner roles cannot cross-write, secrets are not stored in code, backups/restores are exercised.

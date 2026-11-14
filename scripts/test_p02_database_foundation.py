@@ -9,6 +9,7 @@ import secrets
 import subprocess
 import sys
 from pathlib import Path
+from uuid import uuid4
 
 import psycopg
 from psycopg import sql
@@ -26,14 +27,11 @@ SERVICES = (
     ("document-service", "document", "document"),
     ("notification-service", "notification", "notification"),
 )
-NEW_SERVICES = {
-    "billing",
-    "template",
-    "orchestration",
-    "quality",
-    "visual",
-    "document",
-    "notification",
+PERSISTENCE_REVISIONS = {
+    "auth": "0002_auth_users",
+    "project": "0003_project_events",
+    "orchestration": "0002_orch_persistence",
+    "document": "0002_doc_metadata",
 }
 
 
@@ -59,6 +57,18 @@ def require_denied(
 def migration_url(admin_url: URL, username: str, password: str) -> str:
     return URL.create(
         "postgresql+psycopg",
+        username=username,
+        password=password,
+        host=admin_url.host,
+        port=admin_url.port,
+        database=admin_url.database,
+        query=dict(admin_url.query),
+    ).render_as_string(hide_password=False)
+
+
+def runtime_url(admin_url: URL, username: str, password: str) -> str:
+    return URL.create(
+        "postgresql",
         username=username,
         password=password,
         host=admin_url.host,
@@ -143,13 +153,13 @@ def assert_baseline_versions(
                         sql.Identifier(schema)
                     )
                 ).fetchall()
+                expected_revision = (
+                    PERSISTENCE_REVISIONS.get(schema, f"0001_{schema}_baseline")
+                    if persistence_tables
+                    else f"0001_{schema}_baseline"
+                )
                 require(
-                    version
-                    == [(
-                        {"auth": "0002_auth_users", "project": "0002_project_projects"}[schema]
-                        if schema in ("auth", "project") and persistence_tables
-                        else f"0001_{schema}_baseline",
-                    )],
+                    version == [(expected_revision,)],
                     f"{schema} has unexpected migration version(s): {version!r}",
                 )
             elif exists is not None:
@@ -397,12 +407,329 @@ def verify_login_boundaries(
             )
 
 
+def verify_persistence_fixtures(
+    admin_url: str,
+    passwords: dict[tuple[str, str], str],
+) -> None:
+    admin_url_parts = make_url(admin_url)
+    project_runtime = runtime_url(
+        admin_url_parts,
+        role_name("project", "runtime"),
+        passwords[("project", "runtime")],
+    )
+    orchestration_runtime = runtime_url(
+        admin_url_parts,
+        role_name("orchestration", "runtime"),
+        passwords[("orchestration", "runtime")],
+    )
+    document_runtime = runtime_url(
+        admin_url_parts,
+        role_name("document", "runtime"),
+        passwords[("document", "runtime")],
+    )
+
+    project_id = uuid4()
+    fact_id = uuid4()
+    event_id = uuid4()
+    event_payload = {
+        "event_id": str(event_id),
+        "event_type": "project.facts.updated",
+        "event_version": 1,
+        "aggregate_id": str(project_id),
+        "aggregate_version": 7,
+        "occurred_at": "2026-11-14T12:00:00+00:00",
+        "data": {
+            "fact_snapshot_version": 7,
+            "changed_fact_ids": [str(fact_id)],
+        },
+    }
+    with psycopg.connect(project_runtime, autocommit=True) as connection:
+        connection.execute(
+            "INSERT INTO project.outbox_events "
+            "(event_id, aggregate_id, aggregate_version, event_type, event_version, payload) "
+            "VALUES (%s, %s, 7, 'project.facts.updated', 1, %s)",
+            (event_id, project_id, psycopg.types.json.Jsonb(event_payload)),
+        )
+        connection.execute(
+            "INSERT INTO project.audit_events "
+            "(id, service_identity, project_id, object_type, object_id, action, result) "
+            "VALUES (%s, 'project', %s, 'outbox_event', %s, 'enqueued', 'success')",
+            (uuid4(), project_id, str(event_id)),
+        )
+        require(
+            connection.execute(
+                "SELECT payload ->> 'event_type', payload -> 'data' ->> "
+                "'fact_snapshot_version' FROM project.outbox_events WHERE event_id = %s",
+                (event_id,),
+            ).fetchone()
+            == ("project.facts.updated", "7"),
+            "Project runtime could not read its persisted event contract payload",
+        )
+        connection.execute(
+            "UPDATE project.outbox_events SET published_at = now(), "
+            "attempt_count = attempt_count + 1 WHERE event_id = %s",
+            (event_id,),
+        )
+        require(
+            connection.execute(
+                "SELECT attempt_count, published_at IS NOT NULL "
+                "FROM project.outbox_events WHERE event_id = %s",
+                (event_id,),
+            ).fetchone()
+            == (1, True),
+            "Project runtime could not update outbox delivery state",
+        )
+        require_denied(
+            connection,
+            sql.SQL(
+                "UPDATE project.outbox_events SET payload = payload WHERE event_id = {}"
+            ).format(sql.Literal(str(event_id))),
+            "Project runtime changing immutable outbox payload",
+        )
+        require(
+            connection.execute("SELECT count(*) FROM project.audit_events").fetchone()
+            == (1,),
+            "Project audit fixture was not readable",
+        )
+
+    job_id = uuid4()
+    report_id = f"opaque-report-{uuid4()}"
+    owner_id = uuid4()
+    section_id = uuid4()
+    section_version_id = uuid4()
+    with psycopg.connect(orchestration_runtime, autocommit=True) as connection:
+        connection.execute(
+            "INSERT INTO orchestration.report_jobs "
+            "(id, report_id, project_id, owner_id, status, graph_thread_id) "
+            "VALUES (%s, %s, %s, %s, 'queued', %s)",
+            (job_id, report_id, project_id, owner_id, f"thread-{job_id}"),
+        )
+        connection.execute(
+            "INSERT INTO orchestration.job_attempts "
+            "(id, job_id, attempt_number, status) VALUES (%s, %s, 1, 'running')",
+            (uuid4(), job_id),
+        )
+        connection.execute(
+            "INSERT INTO orchestration.section_versions "
+            "(id, job_id, section_id, version_number, status, content, output_sha256) "
+            "VALUES (%s, %s, %s, 1, 'draft', '{}'::jsonb, %s)",
+            (section_version_id, job_id, section_id, "a" * 64),
+        )
+        connection.execute(
+            "INSERT INTO orchestration.input_version_refs "
+            "(id, job_id, scope, source_service, resource_type, resource_id, version) "
+            "VALUES (%s, %s, 'job', 'project', 'fact_snapshot', %s, '7')",
+            (uuid4(), job_id, str(project_id)),
+        )
+        connection.execute(
+            "INSERT INTO orchestration.input_version_refs "
+            "(id, job_id, section_version_id, scope, source_service, resource_type, "
+            "resource_id, version) "
+            "VALUES (%s, %s, %s, 'section', 'quality', 'verdict', 'opaque-verdict', '3')",
+            (uuid4(), job_id, section_version_id),
+        )
+        connection.execute(
+            "INSERT INTO orchestration.progress_events "
+            "(job_id, project_id, event_type, event_version, stage, safe_message) "
+            "VALUES (%s, %s, 'job.queued', 1, 'queued', 'Queued'), "
+            "(%s, %s, 'job.started', 1, 'starting', 'Started')",
+            (job_id, project_id, job_id, project_id),
+        )
+        connection.execute(
+            "INSERT INTO orchestration.checkpoint_references "
+            "(id, job_id, thread_id, checkpoint_namespace, checkpoint_id) "
+            "VALUES (%s, %s, %s, '', 'checkpoint-fixture')",
+            (uuid4(), job_id, f"thread-{job_id}"),
+        )
+        connection.execute(
+            "INSERT INTO orchestration.audit_events "
+            "(id, service_identity, project_id, object_type, object_id, action, result) "
+            "VALUES (%s, 'orchestration', %s, 'report_job', %s, 'created', 'success')",
+            (uuid4(), project_id, str(job_id)),
+        )
+        inbox_values = (
+            "project",
+            event_id,
+            "project.facts.updated",
+            1,
+            "received",
+        )
+        connection.execute(
+            "INSERT INTO orchestration.inbox_deduplication "
+            "(producer_service, event_id, event_type, event_version, processing_status) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            inbox_values,
+        )
+        try:
+            connection.execute(
+                "INSERT INTO orchestration.inbox_deduplication "
+                "(producer_service, event_id, event_type, event_version, processing_status) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                inbox_values,
+            )
+        except psycopg.errors.UniqueViolation:
+            pass
+        else:
+            raise RuntimeError("Duplicate Project event delivery was not rejected")
+        connection.execute(
+            "UPDATE orchestration.inbox_deduplication SET "
+            "processing_status = 'processed', processed_at = now() "
+            "WHERE producer_service = 'project' AND event_id = %s",
+            (event_id,),
+        )
+        require_denied(
+            connection,
+            sql.SQL(
+                "UPDATE orchestration.report_jobs SET report_id = report_id WHERE id = {}"
+            ).format(sql.Literal(str(job_id))),
+            "Orchestration runtime changing opaque report reference",
+        )
+        require_denied(
+            connection,
+            sql.SQL(
+                "UPDATE orchestration.audit_events SET action = action WHERE object_id = {}"
+            ).format(sql.Literal(str(job_id))),
+            "Orchestration runtime changing audit history",
+        )
+
+        require(
+            connection.execute(
+                "SELECT report_id, project_id FROM orchestration.report_jobs WHERE id = %s",
+                (job_id,),
+            ).fetchone()
+            == (report_id, project_id),
+            "Orchestration runtime could not read its persisted report job",
+        )
+        require(
+            connection.execute(
+                "SELECT count(*) FROM orchestration.input_version_refs WHERE job_id = %s",
+                (job_id,),
+            ).fetchone()
+            == (2,),
+            "Orchestration did not retain the job and section input versions",
+        )
+        progress = connection.execute(
+            "SELECT event_id FROM orchestration.progress_events "
+            "WHERE job_id = %s ORDER BY event_id",
+            (job_id,),
+        ).fetchall()
+        require(
+            len(progress) == 2 and progress[0][0] < progress[1][0],
+            "Orchestration progress events are not ordered by their durable cursor",
+        )
+        for table in (
+            "job_attempts",
+            "section_versions",
+            "checkpoint_references",
+            "audit_events",
+            "inbox_deduplication",
+        ):
+            require(
+                connection.execute(
+                    sql.SQL("SELECT count(*) FROM orchestration.{}").format(
+                        sql.Identifier(table)
+                    )
+                ).fetchone()
+                == (1,),
+                f"Orchestration fixture was not readable from {table}",
+            )
+
+    document_id = uuid4()
+    document_version_id = uuid4()
+    with psycopg.connect(document_runtime, autocommit=True) as connection:
+        connection.execute(
+            "INSERT INTO document.document_objects "
+            "(id, owner_id, project_id, report_id, document_type) "
+            "VALUES (%s, %s, %s, %s, 'report_export')",
+            (document_id, owner_id, project_id, report_id),
+        )
+        connection.execute(
+            "INSERT INTO document.document_versions "
+            "(id, document_object_id, version_number, r2_bucket, r2_object_key, "
+            "checksum_sha256, size_bytes, media_type) "
+            "VALUES (%s, %s, 1, 'private-documents', %s, %s, 1024, 'application/pdf')",
+            (document_version_id, document_id, f"reports/{report_id}/v1/report.pdf", "b" * 64),
+        )
+        connection.execute(
+            "INSERT INTO document.document_access_history "
+            "(id, document_version_id, actor_id, access_action, result, request_id) "
+            "VALUES (%s, %s, %s, 'preview', 'success', 'req_fixture')",
+            (uuid4(), document_version_id, owner_id),
+        )
+        connection.execute(
+            "INSERT INTO document.audit_events "
+            "(id, actor_id, service_identity, project_id, object_type, object_id, "
+            "action, result) "
+            "VALUES (%s, %s, 'document', %s, 'document_version', %s, "
+            "'metadata_created', 'success')",
+            (uuid4(), owner_id, project_id, str(document_version_id)),
+        )
+        require(
+            connection.execute(
+                "SELECT r2_object_key, checksum_sha256, size_bytes "
+                "FROM document.document_versions WHERE id = %s",
+                (document_version_id,),
+            ).fetchone()
+            == (f"reports/{report_id}/v1/report.pdf", "b" * 64, 1024),
+            "Document runtime could not read its private R2 metadata fixture",
+        )
+        require_denied(
+            connection,
+            sql.SQL(
+                "UPDATE document.document_versions SET checksum_sha256 = checksum_sha256 "
+                "WHERE id = {}"
+            ).format(sql.Literal(str(document_version_id))),
+            "Document runtime changing immutable version metadata",
+        )
+        for table in ("document_objects", "document_access_history", "audit_events"):
+            require(
+                connection.execute(
+                    sql.SQL("SELECT count(*) FROM document.{}").format(
+                        sql.Identifier(table)
+                    )
+                ).fetchone()
+                == (1,),
+                f"Document fixture was not readable from {table}",
+            )
+
+    for source, target in (
+        ("project", "orchestration"),
+        ("orchestration", "project"),
+        ("orchestration", "document"),
+        ("document", "orchestration"),
+        ("project", "document"),
+        ("document", "project"),
+    ):
+        connection_url = {
+            "project": project_runtime,
+            "orchestration": orchestration_runtime,
+            "document": document_runtime,
+        }[source]
+        with psycopg.connect(connection_url, autocommit=True) as connection:
+            require_denied(
+                connection,
+                sql.SQL(
+                    "INSERT INTO {}.audit_events "
+                    "(id, service_identity, object_type, object_id, action, result) "
+                    "VALUES ({}, {}, 'boundary_probe', 'denied', 'write', 'denied')"
+                ).format(
+                    sql.Identifier(target),
+                    sql.Literal(str(uuid4())),
+                    sql.Literal(source),
+                ),
+                f"{source} runtime writing {target}.audit_events",
+            )
+
+    print(
+        "PASS P02 report-job, document metadata, audit/outbox/inbox fixtures "
+        "and cross-schema write denial"
+    )
+
+
 def verify_independent_rollback(
     admin_url: str, urls: dict[str, str]
 ) -> None:
     for service_name, schema, _ in SERVICES:
-        if schema not in NEW_SERVICES:
-            continue
         service_dir = ROOT / "services" / service_name
         run_migration(service_dir, urls[schema], "downgrade", "base")
         assert_baseline_versions(
@@ -449,13 +776,14 @@ def main() -> None:
     schemas = {schema for _, schema, _ in SERVICES}
     assert_baseline_versions(admin_url, schemas)
     assert_only_baseline_tables(admin_url)
-    for service_name, schema in (("auth-service", "auth"), ("project-service", "project")):
+    for service_name, schema, _ in SERVICES:
         run_migration(ROOT / "services" / service_name, migration_urls[schema], "upgrade", "head")
     assert_baseline_versions(admin_url, schemas, persistence_tables=True)
     assert_role_configuration(admin_url)
     create_permission_fixtures(admin_url)
     verify_owner_boundaries(admin_url)
     verify_login_boundaries(admin_url, passwords)
+    verify_persistence_fixtures(admin_url, passwords)
     verify_independent_rollback(admin_url, migration_urls)
     print("PASS all nine service schemas, role boundaries, and migration checks")
 

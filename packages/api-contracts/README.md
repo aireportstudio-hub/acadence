@@ -26,3 +26,11 @@ breaking-change checks remain open.
 
 - [Project confirmed-fact snapshot v1](./project-fact-snapshot.v1.md) - proposed
   synchronous read from AI Orchestration to Project; not deployed.
+
+## P02 event contract
+
+- [Project facts updated event v1](./project-facts-updated.v1.schema.json) -
+  Project outbox producer and AI Orchestration consumer, as identified by the
+  approved system architecture. It carries opaque project/fact IDs and the
+  pinned fact snapshot version, not fact values. Transport, delivery timing,
+  retry policy and actor-context authorization remain open.
