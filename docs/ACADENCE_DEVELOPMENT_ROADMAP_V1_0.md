@@ -99,6 +99,8 @@ The remaining P01 execution gates and required evidence are consolidated in the 
 
 **Gate P02:** Migrations work from an empty database, can be rolled forward independently, owner roles cannot cross-write, secrets are not stored in code, backups/restores are exercised.
 
+Local schema/role/baseline verification and remaining P02 work are recorded in the [P02 database foundation runbook](./runbooks/P02_DATABASE_FOUNDATION.md); this evidence does not complete the P02 gate.
+
 ### Phase P03 — Authentication, route protection and notification foundation
 
 **Depends on:** P01–P02. **Owners:** Auth (#2), Notification (#5), Safety guard (#31), frontend.
