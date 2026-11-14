@@ -93,11 +93,12 @@ The remaining P01 execution gates and required evidence are consolidated in the 
 - [ ] Build nine service-owned PostgreSQL schemas (`auth`, `billing`, `project`, `template`, `orchestration`, `quality`, `visual`, `document`, `notification`), service-specific Alembic migrations and least-privilege DB users.
 - [ ] Create stable user/project/report identifiers without allowing cross-service ORM ownership; resolve reference lookup through APIs or verified event projections. Auth's permanent UUIDv4 user ID is implemented and documented in the
   [P02 database foundation runbook](./runbooks/P02_DATABASE_FOUNDATION.md);
-  report identifiers and cross-service lookup remain open.
-- [ ] Add versioned API/event schemas, access/audit logs, outbox/inbox and deduplication only where asynchronous cross-service guarantees are required.
+  the Document-issued UUIDv4 `report_id` recommendation and API lookup remain
+  proposals pending approval.
+- [ ] Add versioned API/event schemas, access/audit logs, outbox/inbox and deduplication only where asynchronous cross-service guarantees are required. The v1 event and local retry/deduplication test are recorded in the runbook; production transport and delivery remain open.
 - [ ] Add document/R2 metadata versioning, checksum, signed URLs, immutable version references, cleanup/deletion and access logging.
 - [x] Add durable job ledger, attempt history, progress event sequence, section version and checkpoint reference entities in orchestration schema.
-- [ ] Define ownership, retention and backup/restore drills; prove service A cannot insert/update service B's table.
+- [ ] Define ownership, retention and backup/restore drills; prove service A cannot insert/update service B's table. Local synthetic row cleanup and backup/restore evidence are recorded; retention periods, deletion automation, hosted Neon and live R2 checks remain pending.
 
 **Gate P02:** Migrations work from an empty database, can be rolled forward independently, owner roles cannot cross-write, secrets are not stored in code, backups/restores are exercised.
 

@@ -9,7 +9,8 @@ import secrets
 import subprocess
 import sys
 from pathlib import Path
-from uuid import uuid4
+from typing import Any
+from uuid import UUID, uuid4
 
 import psycopg
 from psycopg import sql
@@ -44,6 +45,22 @@ def require(condition: bool, message: str) -> None:
         raise RuntimeError(message)
 
 
+class LocalDeliveryInterrupted(RuntimeError):
+    pass
+
+
+class LocalTestTransport:
+    def __init__(self) -> None:
+        self.messages: list[dict[str, Any]] = []
+        self.interrupt_after_first_accept = True
+
+    def send(self, event: dict[str, Any]) -> None:
+        self.messages.append(event)
+        if self.interrupt_after_first_accept:
+            self.interrupt_after_first_accept = False
+            raise LocalDeliveryInterrupted("simulated dispatcher interruption")
+
+
 def require_denied(
     connection: psycopg.Connection, statement: sql.Composable, label: str
 ) -> None:
@@ -67,14 +84,18 @@ def migration_url(admin_url: URL, username: str, password: str) -> str:
 
 
 def runtime_url(admin_url: URL, username: str, password: str) -> str:
+    runtime_endpoint = make_url(
+        os.environ.get("P02_TEST_RUNTIME_DATABASE_URL")
+        or admin_url.render_as_string(hide_password=False)
+    )
     return URL.create(
         "postgresql",
         username=username,
         password=password,
-        host=admin_url.host,
-        port=admin_url.port,
-        database=admin_url.database,
-        query=dict(admin_url.query),
+        host=runtime_endpoint.host,
+        port=runtime_endpoint.port,
+        database=runtime_endpoint.database,
+        query=dict(runtime_endpoint.query),
     ).render_as_string(hide_password=False)
 
 
@@ -311,12 +332,10 @@ def verify_login_boundaries(
 
         runtime = role_name(schema, "runtime")
         runtime_password = passwords[(schema, "runtime")]
-        with psycopg.connect(
-            admin_url,
-            user=runtime,
-            password=runtime_password,
-            autocommit=True,
-        ) as connection:
+        runtime_connection_url = runtime_url(
+            make_url(admin_url), runtime, runtime_password
+        )
+        with psycopg.connect(runtime_connection_url, autocommit=True) as connection:
             require(
                 connection.execute(
                     "SELECT session_user, current_user"
@@ -417,6 +436,11 @@ def verify_persistence_fixtures(
         role_name("project", "runtime"),
         passwords[("project", "runtime")],
     )
+    auth_runtime = runtime_url(
+        admin_url_parts,
+        role_name("auth", "runtime"),
+        passwords[("auth", "runtime")],
+    )
     orchestration_runtime = runtime_url(
         admin_url_parts,
         role_name("orchestration", "runtime"),
@@ -431,6 +455,15 @@ def verify_persistence_fixtures(
     project_id = uuid4()
     fact_id = uuid4()
     event_id = uuid4()
+    owner_id = uuid4()
+    with psycopg.connect(auth_runtime, autocommit=True) as connection:
+        connection.execute("INSERT INTO auth.users (id) VALUES (%s)", (owner_id,))
+    with psycopg.connect(project_runtime, autocommit=True) as connection:
+        connection.execute(
+            "INSERT INTO project.projects (id, owner_user_id, title) "
+            "VALUES (%s, %s, 'Synthetic P02 cleanup project')",
+            (project_id, owner_id),
+        )
     event_payload = {
         "event_id": str(event_id),
         "event_type": "project.facts.updated",
@@ -452,9 +485,10 @@ def verify_persistence_fixtures(
         )
         connection.execute(
             "INSERT INTO project.audit_events "
-            "(id, service_identity, project_id, object_type, object_id, action, result) "
-            "VALUES (%s, 'project', %s, 'outbox_event', %s, 'enqueued', 'success')",
-            (uuid4(), project_id, str(event_id)),
+            "(id, actor_id, service_identity, project_id, object_type, object_id, "
+            "action, result) "
+            "VALUES (%s, %s, 'project', %s, 'outbox_event', %s, 'enqueued', 'success')",
+            (uuid4(), owner_id, project_id, str(event_id)),
         )
         require(
             connection.execute(
@@ -464,20 +498,6 @@ def verify_persistence_fixtures(
             ).fetchone()
             == ("project.facts.updated", "7"),
             "Project runtime could not read its persisted event contract payload",
-        )
-        connection.execute(
-            "UPDATE project.outbox_events SET published_at = now(), "
-            "attempt_count = attempt_count + 1 WHERE event_id = %s",
-            (event_id,),
-        )
-        require(
-            connection.execute(
-                "SELECT attempt_count, published_at IS NOT NULL "
-                "FROM project.outbox_events WHERE event_id = %s",
-                (event_id,),
-            ).fetchone()
-            == (1, True),
-            "Project runtime could not update outbox delivery state",
         )
         require_denied(
             connection,
@@ -494,9 +514,9 @@ def verify_persistence_fixtures(
 
     job_id = uuid4()
     report_id = f"opaque-report-{uuid4()}"
-    owner_id = uuid4()
     section_id = uuid4()
     section_version_id = uuid4()
+    orchestration_audit_id = uuid4()
     with psycopg.connect(orchestration_runtime, autocommit=True) as connection:
         connection.execute(
             "INSERT INTO orchestration.report_jobs "
@@ -543,39 +563,10 @@ def verify_persistence_fixtures(
         )
         connection.execute(
             "INSERT INTO orchestration.audit_events "
-            "(id, service_identity, project_id, object_type, object_id, action, result) "
-            "VALUES (%s, 'orchestration', %s, 'report_job', %s, 'created', 'success')",
-            (uuid4(), project_id, str(job_id)),
-        )
-        inbox_values = (
-            "project",
-            event_id,
-            "project.facts.updated",
-            1,
-            "received",
-        )
-        connection.execute(
-            "INSERT INTO orchestration.inbox_deduplication "
-            "(producer_service, event_id, event_type, event_version, processing_status) "
-            "VALUES (%s, %s, %s, %s, %s)",
-            inbox_values,
-        )
-        try:
-            connection.execute(
-                "INSERT INTO orchestration.inbox_deduplication "
-                "(producer_service, event_id, event_type, event_version, processing_status) "
-                "VALUES (%s, %s, %s, %s, %s)",
-                inbox_values,
-            )
-        except psycopg.errors.UniqueViolation:
-            pass
-        else:
-            raise RuntimeError("Duplicate Project event delivery was not rejected")
-        connection.execute(
-            "UPDATE orchestration.inbox_deduplication SET "
-            "processing_status = 'processed', processed_at = now() "
-            "WHERE producer_service = 'project' AND event_id = %s",
-            (event_id,),
+            "(id, actor_id, service_identity, project_id, object_type, object_id, "
+            "action, result) "
+            "VALUES (%s, %s, 'orchestration', %s, 'report_job', %s, 'created', 'success')",
+            (orchestration_audit_id, owner_id, project_id, str(job_id)),
         )
         require_denied(
             connection,
@@ -622,7 +613,6 @@ def verify_persistence_fixtures(
             "section_versions",
             "checkpoint_references",
             "audit_events",
-            "inbox_deduplication",
         ):
             require(
                 connection.execute(
@@ -636,6 +626,8 @@ def verify_persistence_fixtures(
 
     document_id = uuid4()
     document_version_id = uuid4()
+    document_access_id = uuid4()
+    document_audit_id = uuid4()
     with psycopg.connect(document_runtime, autocommit=True) as connection:
         connection.execute(
             "INSERT INTO document.document_objects "
@@ -654,7 +646,7 @@ def verify_persistence_fixtures(
             "INSERT INTO document.document_access_history "
             "(id, document_version_id, actor_id, access_action, result, request_id) "
             "VALUES (%s, %s, %s, 'preview', 'success', 'req_fixture')",
-            (uuid4(), document_version_id, owner_id),
+            (document_access_id, document_version_id, owner_id),
         )
         connection.execute(
             "INSERT INTO document.audit_events "
@@ -662,7 +654,7 @@ def verify_persistence_fixtures(
             "action, result) "
             "VALUES (%s, %s, 'document', %s, 'document_version', %s, "
             "'metadata_created', 'success')",
-            (uuid4(), owner_id, project_id, str(document_version_id)),
+            (document_audit_id, owner_id, project_id, str(document_version_id)),
         )
         require(
             connection.execute(
@@ -692,6 +684,13 @@ def verify_persistence_fixtures(
                 f"Document fixture was not readable from {table}",
             )
 
+    verify_local_event_delivery(
+        admin_url,
+        project_runtime,
+        orchestration_runtime,
+        event_id,
+    )
+
     for source, target in (
         ("project", "orchestration"),
         ("orchestration", "project"),
@@ -720,10 +719,318 @@ def verify_persistence_fixtures(
                 f"{source} runtime writing {target}.audit_events",
             )
 
-    print(
-        "PASS P02 report-job, document metadata, audit/outbox/inbox fixtures "
-        "and cross-schema write denial"
+    verify_proposed_deletion(
+        admin_url,
+        owner_id,
+        project_id,
+        event_id,
+        job_id,
+        document_id,
+        document_version_id,
+        document_access_id,
+        document_audit_id,
+        orchestration_audit_id,
     )
+
+    print(
+        "PASS P02 report-job, document metadata, audit/outbox/inbox fixtures, "
+        "local event retry/deduplication, proposed deletion cleanup, and "
+        "cross-schema write denial"
+    )
+
+
+def verify_local_event_delivery(
+    admin_url: str,
+    project_runtime: str,
+    orchestration_runtime: str,
+    event_id: UUID,
+) -> None:
+    with psycopg.connect(admin_url, autocommit=True) as connection:
+        connection.execute("SET ROLE acadence_orchestration_owner")
+        connection.execute(
+            "CREATE TABLE orchestration.p02_delivery_effect_probe ("
+            "event_id uuid PRIMARY KEY, fact_snapshot_version integer NOT NULL)"
+        )
+        connection.execute("RESET ROLE")
+        connection.execute(
+            "GRANT SELECT, INSERT ON orchestration.p02_delivery_effect_probe "
+            "TO acadence_orchestration_runtime"
+        )
+
+    transport = LocalTestTransport()
+    with psycopg.connect(project_runtime, autocommit=True) as connection:
+        event = connection.execute(
+            "SELECT payload FROM project.outbox_events WHERE event_id = %s",
+            (event_id,),
+        ).fetchone()[0]
+
+    try:
+        transport.send(event)
+    except LocalDeliveryInterrupted:
+        with psycopg.connect(project_runtime, autocommit=True) as connection:
+            connection.execute(
+                "UPDATE project.outbox_events SET attempt_count = attempt_count + 1, "
+                "next_attempt_at = now() + interval '1 second' "
+                "WHERE event_id = %s AND published_at IS NULL",
+                (event_id,),
+            )
+    else:
+        raise RuntimeError("The local transport interruption was not simulated")
+
+    with psycopg.connect(project_runtime, autocommit=True) as connection:
+        require(
+            connection.execute(
+                "SELECT attempt_count, published_at IS NULL, next_attempt_at IS NOT NULL "
+                "FROM project.outbox_events WHERE event_id = %s",
+                (event_id,),
+            ).fetchone()
+            == (1, True, True),
+            "Interrupted outbox delivery was not left pending for retry",
+        )
+        connection.execute(
+            "UPDATE project.outbox_events SET next_attempt_at = now() - interval '1 second' "
+            "WHERE event_id = %s",
+            (event_id,),
+        )
+        due_event = connection.execute(
+            "SELECT payload FROM project.outbox_events "
+            "WHERE event_id = %s AND published_at IS NULL AND next_attempt_at <= now()",
+            (event_id,),
+        ).fetchone()
+        require(due_event is not None, "Interrupted outbox event was not retryable")
+        transport.send(due_event[0])
+        connection.execute(
+            "UPDATE project.outbox_events SET attempt_count = attempt_count + 1, "
+            "published_at = now(), next_attempt_at = NULL WHERE event_id = %s",
+            (event_id,),
+        )
+
+    committed_effects = 0
+    for delivery in transport.messages:
+        with psycopg.connect(orchestration_runtime) as connection:
+            inserted = connection.execute(
+                "INSERT INTO orchestration.inbox_deduplication "
+                "(producer_service, event_id, event_type, event_version, processing_status) "
+                "VALUES ('project', %s, 'project.facts.updated', 1, 'received') "
+                "ON CONFLICT (producer_service, event_id) DO NOTHING "
+                "RETURNING event_id",
+                (delivery["event_id"],),
+            ).fetchone()
+            if inserted is None:
+                continue
+            connection.execute(
+                "INSERT INTO orchestration.p02_delivery_effect_probe "
+                "(event_id, fact_snapshot_version) VALUES (%s, %s)",
+                (
+                    delivery["event_id"],
+                    delivery["data"]["fact_snapshot_version"],
+                ),
+            )
+            connection.execute(
+                "UPDATE orchestration.inbox_deduplication SET "
+                "processing_status = 'processed', processed_at = now() "
+                "WHERE producer_service = 'project' AND event_id = %s",
+                (delivery["event_id"],),
+            )
+            committed_effects += 1
+
+    require(len(transport.messages) == 2, "Interrupted publish was not retried")
+    require(committed_effects == 1, "Duplicate delivery committed more than one effect")
+    with psycopg.connect(orchestration_runtime, autocommit=True) as connection:
+        require(
+            connection.execute(
+                "SELECT count(*) FROM orchestration.inbox_deduplication "
+                "WHERE producer_service = 'project' AND event_id = %s "
+                "AND processing_status = 'processed'",
+                (event_id,),
+            ).fetchone()
+            == (1,),
+            "The duplicate event did not produce one processed inbox row",
+        )
+        require(
+            connection.execute(
+                "SELECT count(*) FROM orchestration.p02_delivery_effect_probe "
+                "WHERE event_id = %s",
+                (event_id,),
+            ).fetchone()
+            == (1,),
+            "The duplicate event did not produce exactly one committed effect",
+        )
+    with psycopg.connect(admin_url, autocommit=True) as connection:
+        connection.execute("SET ROLE acadence_orchestration_owner")
+        connection.execute("DROP TABLE orchestration.p02_delivery_effect_probe")
+        connection.execute("RESET ROLE")
+
+    print("PASS local outbox interruption retry and transactional inbox deduplication")
+
+
+def verify_proposed_deletion(
+    admin_url: str,
+    owner_id: UUID,
+    project_id: UUID,
+    event_id: UUID,
+    job_id: UUID,
+    document_id: UUID,
+    document_version_id: UUID,
+    document_access_id: UUID,
+    document_audit_id: UUID,
+    orchestration_audit_id: UUID,
+) -> None:
+    with psycopg.connect(admin_url, autocommit=True) as connection:
+        connection.execute("SET ROLE acadence_project_owner")
+        connection.execute(
+            "DELETE FROM project.outbox_events WHERE event_id = %s AND published_at IS NOT NULL",
+            (event_id,),
+        )
+        connection.execute(
+            "UPDATE project.audit_events SET actor_id = NULL, project_id = NULL, "
+            "object_id = 'redacted', action = 'deletion_completed', metadata = '{}'::jsonb "
+            "WHERE object_id = %s",
+            (str(event_id),),
+        )
+        connection.execute("DELETE FROM project.projects WHERE id = %s", (project_id,))
+        connection.execute("RESET ROLE")
+
+        connection.execute("SET ROLE acadence_orchestration_owner")
+        connection.execute(
+            "DELETE FROM orchestration.inbox_deduplication "
+            "WHERE producer_service = 'project' AND event_id = %s",
+            (event_id,),
+        )
+        connection.execute(
+            "UPDATE orchestration.audit_events SET actor_id = NULL, project_id = NULL, "
+            "object_id = 'redacted', action = 'deletion_completed' WHERE id = %s",
+            (orchestration_audit_id,),
+        )
+        connection.execute("DELETE FROM orchestration.report_jobs WHERE id = %s", (job_id,))
+        connection.execute("RESET ROLE")
+
+        connection.execute("SET ROLE acadence_document_owner")
+        try:
+            connection.execute(
+                "DELETE FROM document.document_versions WHERE id = %s",
+                (document_version_id,),
+            )
+        except psycopg.errors.ForeignKeyViolation:
+            pass
+        else:
+            raise RuntimeError(
+                "Document version cleanup ignored its access-history reference"
+            )
+        connection.execute(
+            "DELETE FROM document.document_access_history WHERE id = %s",
+            (document_access_id,),
+        )
+        connection.execute(
+            "DELETE FROM document.document_versions WHERE id = %s",
+            (document_version_id,),
+        )
+        connection.execute(
+            "UPDATE document.audit_events SET actor_id = NULL, project_id = NULL, "
+            "object_id = 'redacted', action = 'deletion_completed' WHERE id = %s",
+            (document_audit_id,),
+        )
+        connection.execute(
+            "DELETE FROM document.document_objects WHERE id = %s",
+            (document_id,),
+        )
+        connection.execute("RESET ROLE")
+
+        connection.execute("SET ROLE acadence_auth_owner")
+        connection.execute("DELETE FROM auth.users WHERE id = %s", (owner_id,))
+        connection.execute("RESET ROLE")
+
+        for query, params, label in (
+            ("SELECT count(*) FROM project.projects WHERE id = %s", (project_id,), "project"),
+            (
+                "SELECT count(*) FROM project.outbox_events WHERE event_id = %s",
+                (event_id,),
+                "outbox event",
+            ),
+            (
+                "SELECT count(*) FROM orchestration.report_jobs WHERE id = %s",
+                (job_id,),
+                "report job",
+            ),
+            (
+                "SELECT count(*) FROM orchestration.job_attempts WHERE job_id = %s",
+                (job_id,),
+                "job attempts",
+            ),
+            (
+                "SELECT count(*) FROM orchestration.section_versions WHERE job_id = %s",
+                (job_id,),
+                "section versions",
+            ),
+            (
+                "SELECT count(*) FROM orchestration.input_version_refs WHERE job_id = %s",
+                (job_id,),
+                "input version references",
+            ),
+            (
+                "SELECT count(*) FROM orchestration.progress_events WHERE job_id = %s",
+                (job_id,),
+                "progress events",
+            ),
+            (
+                "SELECT count(*) FROM orchestration.checkpoint_references WHERE job_id = %s",
+                (job_id,),
+                "checkpoint references",
+            ),
+            (
+                "SELECT count(*) FROM orchestration.inbox_deduplication "
+                "WHERE producer_service = 'project' AND event_id = %s",
+                (event_id,),
+                "inbox event",
+            ),
+            (
+                "SELECT count(*) FROM document.document_versions "
+                "WHERE id = %s OR document_object_id = %s",
+                (document_version_id, document_id),
+                "document versions",
+            ),
+            (
+                "SELECT count(*) FROM document.document_access_history "
+                "WHERE id = %s",
+                (document_access_id,),
+                "document access history",
+            ),
+            (
+                "SELECT count(*) FROM document.document_objects WHERE id = %s",
+                (document_id,),
+                "document metadata",
+            ),
+            ("SELECT count(*) FROM auth.users WHERE id = %s", (owner_id,), "Auth user"),
+        ):
+            require(
+                connection.execute(query, params).fetchone() == (0,),
+                f"Proposed cleanup left synthetic {label} rows behind",
+            )
+
+        for schema, table, audit_id in (
+            ("project", "audit_events", None),
+            ("orchestration", "audit_events", orchestration_audit_id),
+            ("document", "audit_events", document_audit_id),
+        ):
+            if schema == "project":
+                row = connection.execute(
+                    "SELECT actor_id, project_id, object_id, action FROM project.audit_events "
+                    "WHERE action = 'deletion_completed'"
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    sql.SQL(
+                        "SELECT actor_id, project_id, object_id, action FROM {}.audit_events "
+                        "WHERE id = %s"
+                    ).format(sql.Identifier(schema)),
+                    (audit_id,),
+                ).fetchone()
+            require(
+                row == (None, None, "redacted", "deletion_completed"),
+                f"{schema}.{table} did not retain only the synthetic deletion audit",
+            )
+
+    print("PASS proposed synthetic account/project cleanup and minimal audit retention")
 
 
 def verify_independent_rollback(
