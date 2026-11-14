@@ -91,7 +91,9 @@ The remaining P01 execution gates and required evidence are consolidated in the 
 **Depends on:** P01. **Owners:** each service; platform/infrastructure.
 
 - [ ] Build nine service-owned PostgreSQL schemas (`auth`, `billing`, `project`, `template`, `orchestration`, `quality`, `visual`, `document`, `notification`), service-specific Alembic migrations and least-privilege DB users.
-- [ ] Create stable user/project/report identifiers without allowing cross-service ORM ownership; resolve reference lookup through APIs or verified event projections.
+- [ ] Create stable user/project/report identifiers without allowing cross-service ORM ownership; resolve reference lookup through APIs or verified event projections. The proposed Auth user ID contract is documented in the
+  [P02 database foundation runbook](./runbooks/P02_DATABASE_FOUNDATION.md);
+  approval and implementation remain open.
 - [ ] Add versioned API/event schemas, access/audit logs, outbox/inbox and deduplication only where asynchronous cross-service guarantees are required.
 - [ ] Add document/R2 metadata versioning, checksum, signed URLs, immutable version references, cleanup/deletion and access logging.
 - [ ] Add durable job ledger, attempt history, progress event sequence, section version and checkpoint reference entities in orchestration schema.

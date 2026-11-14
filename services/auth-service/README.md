@@ -88,5 +88,8 @@ and reapply. The container and its anonymous volume were removed.
 
 P02 follow-ups remain: Auth identity/session tables and narrowly scoped
 production grants, migrations for the other seven schemas, Neon credentials
-and pooling, and backup/restore drills. No cloud migration, Google sign-in,
-or OTP behavior is implemented here.
+and pooling, formal approval and implementation of the proposed stable UUIDv4
+user ID contract, and backup/restore drills. The proposal and P03 Google/phone
+identity mapping are documented in the
+[P02 database foundation runbook](../../docs/runbooks/P02_DATABASE_FOUNDATION.md).
+No cloud migration, Google sign-in, or OTP behavior is implemented here.

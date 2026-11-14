@@ -41,11 +41,14 @@ operations. The empty baseline is followed by `0002_project_projects`;
 Alembic's version table is kept in `project`.
 
 The initial `project.projects` table stores a project ID, owner user ID,
-title, and optional description. The proposed format for both IDs is UUID:
-Project generates a UUIDv4 for each project, and accepts an owner UUID as an
-opaque reference without a cross-schema foreign key. Auth's eventual user ID
-format and cross-service identity contract remain open and must be reconciled
-before integration. Other intake data is deferred.
+title, and optional description. Project generates a UUIDv4 for each project.
+The migration defines `owner_user_id` as a UUID and stores the Auth-issued ID
+as an opaque owner reference, without a cross-schema foreign key. The proposed
+permanent Auth user ID is UUIDv4; the proposal and its P03 Google/phone identity
+mapping are documented in the
+[P02 database foundation runbook](../../docs/runbooks/P02_DATABASE_FOUNDATION.md).
+The proposal still needs approval and implementation before integration.
+Other intake data is deferred.
 
 The internal `projects.py` functions take a runtime psycopg connection.
 `create_project` inserts a record; `get_project` requires both the project
