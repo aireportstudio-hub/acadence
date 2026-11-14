@@ -1,7 +1,7 @@
 # P02 local database foundation
 
-This runbook covers the schema, role and Alembic baseline foundation only. It
-does not create product tables or mark the full P02 gate complete.
+This runbook covers the schema, role and Alembic baseline foundation and the
+first Project persistence revision. It does not mark the full P02 gate complete.
 
 ## Local verification
 
@@ -19,7 +19,8 @@ Remove-Item Env:\P02_TEST_ADMIN_DATABASE_URL
 
 The test database must be discarded after the run. The script does not create or
 remove containers, volumes, or databases. It bootstraps all nine service schemas,
-runs every empty baseline, and verifies that the version table is service-owned.
+runs every empty baseline, then applies the Project persistence revision and
+verifies that each version table is service-owned.
 Temporary `permission_probe` tables and cross-schema `USAGE`/`SELECT` grants
 exist only in this disposable database. The test checks runtime CRUD on its
 explicitly granted table, denies foreign-schema writes and own-schema DDL,
@@ -50,9 +51,18 @@ denial, and isolation of each schema's `alembic_version`. Python compilation
 and Git whitespace checks passed for the new files. The temporary PostgreSQL
 container and volume were removed. Google Cloud and Neon were not contacted.
 
+On 2026-11-14, the updated verifier also passed on a fresh local PostgreSQL 16
+Alpine container with the new Project revision applied. A separate disposable
+PostgreSQL container passed the full Project Service suite (11 tests), including
+password-authenticated migration and runtime logins, separate-connection
+create/read, owner isolation, Auth write denial and new-revision
+downgrade/reapply. Both containers were removed. See the
+[Project Service README](../../services/project-service/README.md) for the
+proposed UUID identifier choice and test details.
+
 ## Remaining P02 work
 
-This local foundation does not complete P02. Product persistence (including
+This local foundation does not complete P02. Remaining product persistence (including
 versioned contracts, audit/event patterns, document metadata and the
 orchestration job ledger), retention ownership, and backup/restore drills
 remain pending. No production credentials, cloud migrations, Neon pooling, or

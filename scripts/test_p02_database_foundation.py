@@ -128,7 +128,7 @@ def bootstrap_services(
 
 
 def assert_baseline_versions(
-    admin_url: str, expected_schemas: set[str]
+    admin_url: str, expected_schemas: set[str], project_has_table: bool = False
 ) -> None:
     with psycopg.connect(admin_url, autocommit=True) as connection:
         for _, schema, _ in SERVICES:
@@ -144,7 +144,12 @@ def assert_baseline_versions(
                     )
                 ).fetchall()
                 require(
-                    version == [(f"0001_{schema}_baseline",)],
+                    version
+                    == [(
+                        "0002_project_projects"
+                        if schema == "project" and project_has_table
+                        else f"0001_{schema}_baseline",
+                    )],
                     f"{schema} has unexpected migration version(s): {version!r}",
                 )
             elif exists is not None:
@@ -400,9 +405,13 @@ def verify_independent_rollback(
             continue
         service_dir = ROOT / "services" / service_name
         run_migration(service_dir, urls[schema], "downgrade", "base")
-        assert_baseline_versions(admin_url, {s for _, s, _ in SERVICES} - {schema})
+        assert_baseline_versions(
+            admin_url, {s for _, s, _ in SERVICES} - {schema}, project_has_table=True
+        )
         run_migration(service_dir, urls[schema], "upgrade", "head")
-        assert_baseline_versions(admin_url, {s for _, s, _ in SERVICES})
+        assert_baseline_versions(
+            admin_url, {s for _, s, _ in SERVICES}, project_has_table=True
+        )
         print(f"PASS {schema}: independent downgrade and reapply")
 
 
@@ -432,12 +441,18 @@ def main() -> None:
             passwords[(schema, "migrator")],
         )
         migration_urls[schema] = url
-        run_migration(ROOT / "services" / service_name, url, "upgrade", "head")
+        run_migration(
+            ROOT / "services" / service_name, url, "upgrade", f"0001_{schema}_baseline"
+        )
         print(f"PASS {schema}: empty-database baseline upgrade")
 
     schemas = {schema for _, schema, _ in SERVICES}
     assert_baseline_versions(admin_url, schemas)
     assert_only_baseline_tables(admin_url)
+    run_migration(
+        ROOT / "services" / "project-service", migration_urls["project"], "upgrade", "head"
+    )
+    assert_baseline_versions(admin_url, schemas, project_has_table=True)
     assert_role_configuration(admin_url)
     create_permission_fixtures(admin_url)
     verify_owner_boundaries(admin_url)

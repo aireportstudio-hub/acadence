@@ -12,7 +12,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 COPY --from=build /opt/venv /opt/venv
-COPY main.py .
+COPY main.py projects.py ./
 
 USER 10001:10001
 EXPOSE 8080
