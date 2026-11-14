@@ -138,10 +138,114 @@ Python compilation, `git diff --check`, and the new-file whitespace scan passed.
 The PostgreSQL container was removed. Google Cloud, Neon, and R2 were not
 contacted; no billing was enabled.
 
+## Local logical backup and restore drill (2026-11-14)
+
+**Result: PASS.** Two disposable `postgres:16-alpine` containers ran PostgreSQL
+16.16, bound only to loopback-assigned ports. The source verifier migrated all
+nine service schemas from empty baselines to head and passed its independent
+downgrade/reapply and role-boundary checks. The target was provisioned from
+each service's `database/bootstrap.sql` before restore; temporary migration
+and runtime role passwords were generated in memory. The custom-format archive
+was restored with ownership and ACL restoration enabled (no `--no-owner`).
+
+The source was seeded through the Auth, Project, AI Orchestration, and Document
+runtime logins. These values identify the synthetic rows included in the
+restored-data comparison:
+
+| Record | ID |
+| --- | --- |
+| Auth user | `25bcea05-c0d3-4294-af7c-5e143dbe61a5` |
+| Project | `fb14b405-3ffb-46be-8ff3-871a0a5d314b` |
+| Report job | `9612e537-5dac-4dc7-adfb-48b580eb41f6` |
+| Report ID (opaque string) | `p02-drill-report-93fd4806-f569-4a0c-9ee8-70c4c63098f6` |
+| Document object | `eb7a94f2-b6ac-43c4-a4ef-2bdffb5d7016` |
+| Document version | `5024e53b-8416-4682-979f-cd8659aff2c1` |
+| Document access-history row | `dc26c466-8859-4663-ad4e-18c95ba8c55b` |
+
+The source and restored target had exactly these Alembic revisions:
+
+| Schema | Revision |
+| --- | --- |
+| `auth` | `0002_auth_users` |
+| `billing` | `0001_billing_baseline` |
+| `project` | `0003_project_events` |
+| `template` | `0001_template_baseline` |
+| `orchestration` | `0002_orch_persistence` |
+| `quality` | `0001_quality_baseline` |
+| `visual` | `0001_visual_baseline` |
+| `document` | `0002_doc_metadata` |
+| `notification` | `0001_notification_baseline` |
+
+The compared Auth, Project, report-job, Document object, version, and
+access-history rows matched field-for-field, including the Auth creation
+timestamp. Source and target reported PostgreSQL `16.16`. The existing
+`verify_login_boundaries` verifier passed against the restored target for all
+nine migration and runtime logins: each runtime could use its own restored
+permission fixture, foreign-schema writes were denied, and runtime DDL and
+migration-metadata access were denied. The actual Auth, Project,
+Orchestration, and Document runtime logins also read their respective seeded
+records; all 12 cross-schema write attempts among those four services were
+denied. The custom-format archive was 76,023 bytes.
+
+### Commands and cleanup
+
+The following is the executed command sequence with generated names, ports,
+archive path, and credentials redacted. The temporary passwords were supplied
+through process environment/in-memory role setup only; they were not written to
+the repository or runbook.
+
+The temporary inline Python harness also applied the nine target bootstrap
+files, generated role passwords, seeded the source records through runtime
+logins, compared source/target rows and revisions, and called the existing
+`verify_login_boundaries(target_url, target_role_passwords)` against the
+restored target. The helper code and credential values were not saved.
+
+```powershell
+docker volume create <source-volume>
+docker volume create <target-volume>
+docker run --detach --name <source> --publish 127.0.0.1::5432 `
+  --env POSTGRES_PASSWORD --env POSTGRES_DB=acadence `
+  --volume <source-volume>:/var/lib/postgresql/data postgres:16-alpine
+docker run --detach --name <target> --publish 127.0.0.1::5432 `
+  --env POSTGRES_PASSWORD --env POSTGRES_DB=acadence `
+  --volume <target-volume>:/var/lib/postgresql/data postgres:16-alpine
+
+$env:P02_TEST_ADMIN_DATABASE_URL = "postgresql://postgres:<ephemeral-secret>@127.0.0.1:<source-port>/acadence"
+.\.venv\Scripts\python.exe scripts\test_p02_database_foundation.py
+Remove-Item Env:\P02_TEST_ADMIN_DATABASE_URL
+
+# Applied each services\<service>\database\bootstrap.sql on the target as
+# postgres, then set temporary migrator/runtime login passwords.
+docker exec <source> pg_dump --username=postgres --dbname=acadence `
+  --format=custom --file=/tmp/<archive>
+docker cp <source>:/tmp/<archive> <temporary-local-archive>
+docker cp <temporary-local-archive> <target>:/tmp/<archive>
+docker exec <target> pg_restore --username=postgres --dbname=acadence `
+  --clean --if-exists --exit-on-error /tmp/<archive>
+
+# After verification:
+docker rm --force <source> <target>
+docker volume rm <source-volume> <target-volume>
+Remove-Item <temporary-local-archive>
+```
+
+Both containers, their named volumes, and the local archive were removed after
+the successful run. Google Cloud, Neon, and R2 were not contacted.
+
+**Limitations:** This proves a local logical database dump/restore on the same
+PostgreSQL major version. `pg_dump` does not include cluster-global roles or
+passwords; the target's service roles were provisioned separately from the
+service bootstrap SQL before restoring ownership and grants. This does not
+exercise managed Neon backup/PITR, physical backups, cross-version restore,
+production credentials, large-database recovery time, or R2 object payload
+recovery. The Document check covers metadata only, not an R2 object.
+
 ## Remaining P02 work
 
 This batch does not complete P02. Remaining work includes the report-record
 issuer/lookup contract, additional service API/event contracts and event
 delivery implementation, live R2 upload/download and signed-URL verification,
 retention/deletion ownership, production Neon and cloud migration checks, and
-backup/restore drills. No production credentials or cloud services were used.
+managed-database backup/restore verification. The local logical backup/restore
+drill above does not complete those production checks. No production credentials
+or cloud services were used.
