@@ -8,7 +8,10 @@ import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 
 const toolingDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(toolingDirectory, "../..");
-const serviceDirectory = path.join(repositoryRoot, "services", "auth-service");
+const projectTest = process.argv[2] === "project";
+const serviceDirectory = path.join(
+  repositoryRoot, "services", projectTest ? "project-service" : "auth-service",
+);
 const python = process.env.PYTHON || "python";
 
 const portProbe = createServer();
@@ -29,7 +32,13 @@ try {
   const databaseUrl = `postgresql://postgres:postgres@127.0.0.1:${port}/postgres`;
   const child = spawn(
     python,
-    ["-m", "unittest", "test_database_permissions.AuthDatabaseMigrationTest", "-v"],
+    [
+      "-m", "unittest",
+      projectTest
+        ? "test_database_permissions.ProjectDatabaseMigrationTest"
+        : "test_database_permissions.AuthDatabaseMigrationTest",
+      "-v",
+    ],
     {
       cwd: serviceDirectory,
       env: {
@@ -39,6 +48,17 @@ try {
           "postgres:postgres@",
           "acadence_auth_runtime:postgres@",
         ),
+        PROJECT_TEST_ADMIN_DATABASE_URL: databaseUrl,
+        PROJECT_TEST_RUNTIME_DATABASE_URL: databaseUrl.replace(
+          "postgres:postgres@",
+          "acadence_project_runtime:postgres@",
+        ),
+        AUTH_MIGRATION_DATABASE_URL: databaseUrl
+          .replace("postgresql://", "postgresql+psycopg://")
+          .replace("postgres:postgres@", "acadence_auth_migrator:postgres@"),
+        PROJECT_MIGRATION_DATABASE_URL: databaseUrl
+          .replace("postgresql://", "postgresql+psycopg://")
+          .replace("postgres:postgres@", "acadence_project_migrator:postgres@"),
         MIGRATION_DATABASE_URL: databaseUrl
           .replace("postgresql://", "postgresql+psycopg://")
           .replace("postgres:postgres@", "acadence_auth_migrator:postgres@"),

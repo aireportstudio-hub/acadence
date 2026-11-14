@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "scripts": {
     "check": "node probe.mjs",
-    "test:auth-db": "node test-auth-migrations.mjs"
+    "test:auth-db": "node test-auth-migrations.mjs",
+    "test:project-db": "node test-auth-migrations.mjs project"
   },
   "type": "module",
   "dependencies": {
