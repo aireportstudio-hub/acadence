@@ -111,9 +111,21 @@ establish password authentication or Neon compatibility.
 
 On 14 November 2026 both service suites passed (10 tests each, with their
 database integration test skipped without URLs); the separate Auth and Project
-PGlite migration/permission checks passed. Native PostgreSQL password
-authentication, Neon credentials and pooling, and backup/restore drills remain
-unverified. The other seven service schemas, Project product tables and
-explicit production table grants remain P02 follow-ups; this is not the P02
-gate. Provisioning and secret management for the eventual Neon environment
-remain open.
+PGlite migration/permission checks passed.
+
+The existing Auth and Project permission tests also passed on disposable
+PostgreSQL 16.16 in a localhost-bound Docker container, with temporary
+passwords assigned to their test-created roles. Both baselines were applied
+using their respective migration logins, and each version table was in its own
+schema. Direct password-authenticated runtime logins passed CRUD on their
+explicitly granted probe tables and were denied writes to the other service's
+existing probe table. Before Project's downgrade an Auth probe row
+(`auth-p02-preservation-20261114`) and revision (`0001_auth_baseline`) were
+recorded; both were unchanged after downgrade and after reapply. The container
+and its anonymous volume were removed. The probe tables and cross-schema
+read grants were test fixtures only.
+
+Neon credentials and pooling, and backup/restore drills remain unverified. The
+other seven service schemas, Project product tables and explicit production
+table grants remain P02 follow-ups; this is not the P02 gate. Provisioning and
+secret management for the eventual Neon environment remain open.

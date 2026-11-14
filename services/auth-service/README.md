@@ -77,9 +77,16 @@ skipped without integration-test URLs), and the dedicated PGlite migration
 test passed (1 test). `git diff --check` and Alembic offline SQL generation
 also passed.
 
-P02 follow-ups remain: Auth identity/session tables and their narrowly scoped
-runtime grants, independent service migrations for the other eight schemas,
-and backup/restore drills. A native PostgreSQL server/password-authentication
-run was not available locally; PGlite checks SQL permissions via `SET ROLE`
-and does not verify password authentication. No cloud migration, Google
-sign-in, or OTP behavior is implemented here.
+On 14 November 2026 the existing Auth and Project database permission tests
+also passed against a disposable PostgreSQL 16.16 Docker container bound to
+localhost. Temporary passwords were assigned to the test-created logins; both
+services migrated using their own logins and retained separate schema-local
+version tables. Direct runtime password logins passed own-probe CRUD and were
+denied writes to the other service's existing probe. An Auth test row and
+revision `0001_auth_baseline` remained unchanged through Project's downgrade
+and reapply. The container and its anonymous volume were removed.
+
+P02 follow-ups remain: Auth identity/session tables and narrowly scoped
+production grants, migrations for the other seven schemas, Neon credentials
+and pooling, and backup/restore drills. No cloud migration, Google sign-in,
+or OTP behavior is implemented here.
