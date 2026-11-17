@@ -18,6 +18,19 @@ class OpenAPITest(unittest.TestCase):
         )
         schema = json.loads(result)
         self.assertEqual(schema["info"]["title"], "Acadence Auth Service")
-        for path in ("/healthz", "/readyz"):
+        expected_paths = (
+            "/healthz",
+            "/readyz",
+            "/v1/auth/google/start",
+            "/v1/auth/google/callback",
+            "/v1/auth/session",
+            "/v1/auth/logout",
+        )
+        for path in expected_paths:
             with self.subTest(path=path):
-                self.assertIn("200", schema["paths"][path]["get"]["responses"])
+                operation = (
+                    schema["paths"][path]["post"]
+                    if path == "/v1/auth/logout"
+                    else schema["paths"][path]["get"]
+                )
+                self.assertIn("200" if path != "/v1/auth/logout" else "204", operation["responses"])

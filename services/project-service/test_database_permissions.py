@@ -9,7 +9,7 @@ import psycopg
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict
 
-from projects import create_project, get_project
+from projects import create_project, get_project, list_projects
 
 SERVICE_DIR = Path(__file__).resolve().parent
 AUTH_DIR = SERVICE_DIR.parent / "auth-service"
@@ -83,7 +83,7 @@ class ProjectDatabaseMigrationTest(unittest.TestCase):
             )
             self.assertEqual(
                 connection.execute("SELECT version_num FROM auth.alembic_version").fetchone(),
-                ("0002_auth_users",),
+                ("0004_auth_sessions",),
             )
             self.assertEqual(
                 connection.execute("SELECT version_num FROM project.alembic_version").fetchone(),
@@ -94,7 +94,7 @@ class ProjectDatabaseMigrationTest(unittest.TestCase):
         with psycopg.connect(ADMIN_DATABASE_URL, autocommit=True) as connection:
             self.assertEqual(
                 connection.execute("SELECT version_num FROM project.alembic_version").fetchone(),
-                ("0002_project_projects",),
+                ("0003_project_events",),
             )
         self.run_migration(
             SERVICE_DIR, PROJECT_MIGRATION_DATABASE_URL, "downgrade", "0001_project_baseline"
@@ -102,7 +102,7 @@ class ProjectDatabaseMigrationTest(unittest.TestCase):
         with psycopg.connect(ADMIN_DATABASE_URL, autocommit=True) as connection:
             self.assertEqual(
                 connection.execute("SELECT version_num FROM auth.alembic_version").fetchone(),
-                ("0002_auth_users",),
+                ("0004_auth_sessions",),
             )
             self.assertIsNone(
                 connection.execute("SELECT to_regclass('project.projects')").fetchone()[0]
@@ -116,7 +116,7 @@ class ProjectDatabaseMigrationTest(unittest.TestCase):
         with psycopg.connect(ADMIN_DATABASE_URL, autocommit=True) as connection:
             self.assertEqual(
                 connection.execute("SELECT version_num FROM project.alembic_version").fetchone(),
-                ("0002_project_projects",),
+                ("0003_project_events",),
             )
             self.assertEqual(
                 connection.execute(
@@ -198,6 +198,10 @@ class ProjectDatabaseMigrationTest(unittest.TestCase):
         with psycopg.connect(PROJECT_RUNTIME_DATABASE_URL, autocommit=True) as connection:
             connection.execute("SET ROLE acadence_project_runtime")
             self.assertEqual(get_project(connection, project.id, owner_id), project)
+            self.assertEqual(
+                list_projects(connection, owner_id), [project, without_description]
+            )
+            self.assertEqual(list_projects(connection, other_owner_id), [])
             self.assertEqual(
                 get_project(connection, without_description.id, owner_id), without_description
             )

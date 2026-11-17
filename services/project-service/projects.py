@@ -38,3 +38,12 @@ def get_project(
         (project_id, owner_user_id),
     ).fetchone()
     return Project(*row) if row is not None else None
+
+
+def list_projects(connection: psycopg.Connection, owner_user_id: UUID) -> list[Project]:
+    rows = connection.execute(
+        "SELECT id, owner_user_id, title, description FROM project.projects "
+        "WHERE owner_user_id = %s ORDER BY title, id",
+        (owner_user_id,),
+    ).fetchall()
+    return [Project(*row) for row in rows]

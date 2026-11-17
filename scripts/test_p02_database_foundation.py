@@ -29,7 +29,7 @@ SERVICES = (
     ("notification-service", "notification", "notification"),
 )
 PERSISTENCE_REVISIONS = {
-    "auth": "0002_auth_users",
+    "auth": "0004_auth_sessions",
     "project": "0003_project_events",
     "orchestration": "0002_orch_persistence",
     "document": "0002_doc_metadata",

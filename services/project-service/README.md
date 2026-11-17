@@ -50,17 +50,41 @@ mapping are documented in the
 Other intake data is deferred.
 
 The internal `projects.py` functions take a runtime psycopg connection.
-`create_project` inserts a record; `get_project` requires both the project
-and owner IDs. The caller owns the transaction and must commit on success.
-The owner ID must come from a verified principal when authentication is
-implemented; these functions do not authenticate callers, enforce quotas, or
+`create_project` inserts a record; `get_project` and `list_projects` require
+an owner ID. The caller owns the transaction and must commit on success.
+The owner ID must come from a verified principal; these functions do not
+authenticate callers, enforce quotas, or
 provide database row-level security. Project runtime has only `SELECT` and
 `INSERT` on this table; schema changes require the migration role.
+
+## P03 Task 4 — owner-scoped project access (partial)
+
+`GET /v1/projects` and `GET /v1/projects/{id}` accept the opaque
+`acadence_session` cookie. Project calls Auth's `/v1/auth/session` on each
+request and uses only the returned verified user UUID for the owner predicate.
+Another owner's ID returns 404; missing, expired or revoked sessions return
+401. Auth or database failures return 503. Responses are not cached.
+
+`POST /v1/projects` is deliberately blocked with 503: Billing eligibility
+and Template selection/snapshot are not implemented. Its request contract
+accepts a title and optional description, rejects extra fields such as owner
+IDs, and checks the configured frontend origin before any write. The
+creation route's happy path is exercised only with a **test-only dependency
+override**, not as a working product feature. Do not remove the gate until
+server-side Billing and Template checks are implemented, including concurrency
+and snapshots. No quota or template selection is implied by an existing row.
+
+Set `AUTH_SERVICE_URL`, `DATABASE_URL`, and `FRONTEND_APP_URL` in the Project
+runtime environment. Auth is called over HTTPS outside development; local HTTP
+is restricted to localhost. Service-to-service IAM and Worker-to-Cloud Run
+ingress remain open deployment prerequisites; a URL and session cookie do not
+provide Cloud Run invoker authorization. Do not deploy this slice as an
+unprotected public service.
 
 Set login passwords using the PostgreSQL administrator's interactive
 `\password` command or an approved secret manager. Keep connection URLs out
 of Git. `MIGRATION_DATABASE_URL` is only for Alembic, using the migrator
-login; the future API database connection uses `DATABASE_URL` with the
+login; the API database connection uses `DATABASE_URL` with the
 runtime login. The container does not install migration dependencies or run
 migrations at startup.
 

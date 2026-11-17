@@ -48,6 +48,7 @@ try {
           "postgres:postgres@",
           "acadence_auth_runtime:postgres@",
         ),
+        AUTH_TEST_SKIP_CONCURRENCY: "1",
         PROJECT_TEST_ADMIN_DATABASE_URL: databaseUrl,
         PROJECT_TEST_RUNTIME_DATABASE_URL: databaseUrl.replace(
           "postgres:postgres@",

@@ -1,3 +1,5 @@
+import { PublicFooter, PublicHeader } from "./SiteShell";
+
 function MentorIllustration() {
   return (
     <svg
@@ -66,8 +68,10 @@ const workflowSteps = [
 
 export default function HomePage() {
   return (
-    <main id="main-content" className="public-main" tabIndex={-1}>
-      <section className="acadence-hero" aria-labelledby="hero-title">
+    <>
+      <PublicHeader />
+      <main id="main-content" className="public-main" tabIndex={-1}>
+        <section className="acadence-hero" aria-labelledby="hero-title">
         <div className="hero-inner page-width">
           <div className="hero-copy">
             <p className="eyebrow">
@@ -185,6 +189,8 @@ export default function HomePage() {
           </p>
         </div>
       </section>
-    </main>
+      </main>
+      <PublicFooter />
+    </>
   );
 }

@@ -108,7 +108,7 @@ Local schema/role/baseline verification and remaining P02 work are recorded in t
 
 **Depends on:** P01–P02. **Owners:** Auth (#2), Notification (#5), Safety guard (#31), frontend.
 
-- [ ] Google OIDC signup/login and secure verified identity linking; verified phone OTP request, expiry, attempt limits, resend limits, verification, account recovery and notification dispatch.
+- [ ] Google OIDC signup/login (server-side flow locally tested; live Google sign-in reached the dashboard, with further browser checks pending) and secure verified identity linking; verified phone OTP request, expiry, attempt limits, resend limits, verification, account recovery and notification dispatch.
 - [ ] Normalize and uniquely constrain verified email and phone; prevent duplicate signup across devices and handle existing-account login and Google/phone linking without bypass.
 - [ ] Implement one-account-per-device risk signals, revocable device/session registration, privacy limits and support appeal; document why a browser cannot guarantee permanent physical device identity.
 - [ ] JWT short-lived access, rotating revocable refresh tokens, protected pages/server APIs, CORS/CSRF design, device/session revoke and logout.
@@ -116,6 +116,48 @@ Local schema/role/baseline verification and remaining P02 work are recorded in t
 - [ ] Deliver fully tested public vs protected routes (signup/login/pricing public as explicitly designated; project/template/report private).
 
 **Gate P03:** Google and OTP pass signup/login/recovery tests, duplicate email/phone is blocked at DB boundary, expired/revoked sessions rejected, one user cannot fetch another user's data.
+
+#### P03 Task 2 — Server-side Google sign-in
+
+**Status (2026-11-15): IMPLEMENTED; local checks and live Google smoke test passed.**
+
+- [x] Start the OAuth authorization-code flow with per-flow state, nonce, PKCE S256, short-lived HTTP-only cookies, and the configured Google redirect URI.
+- [x] Exchange the authorization code with its PKCE verifier; validate the Google ID-token signature, issuer, audience and expiry with `google-auth`, then match its nonce.
+- [x] Bind only the verified Google `sub` to Auth's UUIDv4 user; create user and binding in one transaction, serialize same-subject first sign-ins, and enforce database uniqueness without email-based linking.
+- [x] Validate synthetic identities and token/flow failures. The Auth suite ran **17 tests: 16 passed, 1 environment-gated PostgreSQL test skipped**; PGlite migration/permission checks passed **1 test**, including sequential subject reuse and database uniqueness.
+- [x] On 2026-11-15, the native Auth PostgreSQL integration test passed on a fresh PostgreSQL 17.6 cluster, including its two-connection first-sign-in race. Both calls returned the same UUID with one creation; database counts confirmed one race binding and associated user with no extra orphan. The temporary cluster was stopped and removed.
+- [x] Live Google smoke test passed on 2026-11-15: first sign-in returned `created: true`; repeat sign-in returned the same Acadence UUID and `created: false`. This verifies same-subject reuse only; it does not claim a second-account test.
+
+**Open validation:** The PGlite harness skips the race; the native PostgreSQL result above provides that local evidence. Session implementation and dashboard wiring are P03 Task 3; OTP and Project endpoints remain out of scope here.
+
+#### P03 Task 3 — Google session and protected dashboard
+
+**Status (2026-11-15): IMPLEMENTED; automated and browser verification recorded below.**
+
+- [x] Issue an eight-hour, opaque Auth session after Google sign-in; persist only its SHA-256 token hash and set an HTTP-only, SameSite=Lax cookie (Secure outside development).
+- [x] Validate active sessions in Auth, rejecting missing, expired, or revoked sessions; protect dashboard rendering with server-side validation.
+- [x] Add same-origin Google-start, session, and logout proxy routes. Logout validates the frontend Origin, revokes the Auth session, and clears the browser cookie.
+- [x] Keep project APIs and project data out of this task; they remain P03 Task 4.
+- [x] Automated results: Auth session tests cover signed-out rejection, valid-session access, expired/revoked-session rejection, sign-out invalidation, and cross-origin sign-out rejection. The PostgreSQL migration/permission test also exercises session insert, expiry, lookup, and revocation when its disposable-database URLs are configured.
+- [x] Browser results: the signed-out dashboard redirects to sign-in; a valid session opens the dashboard; an expired session is rejected; signing out returns to sign-in and the old session no longer opens the dashboard. These browser checks use a local test Auth endpoint, not live Google.
+- [x] UI completion for `AUTH-01` and `APP-01`: frontend check reported 100% vinext compatibility and the production build completed. Browser layouts were checked at 1440, 820, 720, 390, and 320 CSS pixels with no horizontal page overflow; desktop and mobile screenshots were reviewed. Google sign-in remains wired to the existing start route. Mobile OTP is shown as unavailable and disabled; no OTP flow was added.
+- [x] Visual follow-through: the original authentication and dashboard sheets were inspected; the two approved AI Mentor SVGs are served from the frontend's `public/illustrations/ai-mentor/` path. Updated `AUTH-01` and `APP-01` screenshots were reviewed at 1440, 820, and 390 CSS pixels; at 320 CSS pixels, document scroll width matched the viewport's client width. The dashboard intentionally omits the mockup's sample projects and plan metrics and keeps project creation disabled until Task 4.
+- [x] The visual follow-through's browser session check used an in-memory local Auth fixture: anonymous redirect, seeded-cookie dashboard access, and logout cookie clearing/redirect passed. This verifies the frontend/proxy flow only, not Auth database revocation; live OAuth was not available during that UI task.
+- [x] Local browser session verification used a local test Auth fixture: no session redirected to sign-in; a seeded test session opened the server-validated dashboard; sign-out cleared/revoked the test session and redirected to sign-in; a subsequent dashboard request was rejected. Live Google-to-dashboard was not verified in this UI task.
+- [x] A subsequent live Google sign-in reached the dashboard, as reported by the user. Live refresh, sign-out, and access after sign-out remain pending.
+- [x] Staged-snapshot checks on 2026-11-17: Auth 28 passed and 1 database test skipped; Project 15 passed and 1 database test skipped; both disposable PGlite migration/permission tests passed. The P02 database verifier passed on disposable PostgreSQL with the staged Auth migration head. Frontend compatibility check and build passed with sourcemap warnings.
+- Project creation and project data remain out of scope for Task 3; the dashboard keeps project actions disabled and shows no invented project or plan metrics.
+
+**Session decision:** This slice uses an opaque, DB-backed session cookie to meet the protected-dashboard, expiry, and revocation exit checks. Short-lived JWT access tokens, rotating refresh tokens, device registration, OTP, and recovery remain open P03 work; this task does not claim those broader P03 requirements are complete.
+
+#### P03 Task 4 — Owner-only project access
+
+**Status (2026-11-15): PARTIAL / BLOCKED.** The user selected a safe partial implementation rather than expanding into the unfinished Billing and Template services.
+
+- Project validates the session with Auth and scopes list and detail queries to the returned user ID. Missing sessions are rejected and cross-owner detail requests return 404. The dashboard links to `APP-02` / `APP-03` project views and to a text-only `PRJ-01` Mentor welcome. New views use Tailwind and existing Acadence tokens.
+- Creation is intentionally unavailable: `POST /v1/projects` fails closed until Billing eligibility and a Template-owned selection/snapshot are implemented. No intake form is shown before template selection. `PRJ-02` / `PRJ-04`, project creation, and the A-creates-and-reopens acceptance test remain incomplete.
+- Automated evidence: Project suite 15 passed, 1 database test skipped without disposable URLs; Auth suite 28 passed, 1 skipped. Separately, both disposable PGlite migration/permission tests passed. API tests mock Auth and storage; their creation happy path uses a test-only prerequisite override, and checks A/B isolation, signed-out denial, and owner-ID rejection. The PGlite test checks actual owner-scoped Project SQL, not the whole browser-to-database flow. Frontend vinext check and Worker build passed; build emitted sourcemap warnings.
+- **Still required:** the Task 4 two-user browser check for owner isolation, plus live browser checks for signed-out routing, 320px+ layouts, keyboard, touch and 200% zoom; real Auth/Project integration; the complete create flow after Billing and Template prerequisites. Cloudflare-to-Cloud Run ingress and Cloud Run service IAM remain open before deployment. This partial work does not complete the P03 gate.
 
 ### Phase P04 — Pricing, payment, quotas and entitlement lifecycle
 
