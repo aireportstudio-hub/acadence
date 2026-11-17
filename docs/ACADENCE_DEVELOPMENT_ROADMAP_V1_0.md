@@ -90,19 +90,19 @@ The remaining P01 execution gates and required evidence are consolidated in the 
 
 **Depends on:** P01. **Owners:** each service; platform/infrastructure.
 
-- [ ] Build nine service-owned PostgreSQL schemas (`auth`, `billing`, `project`, `template`, `orchestration`, `quality`, `visual`, `document`, `notification`), service-specific Alembic migrations and least-privilege DB users.
+- [x] Build nine service-owned PostgreSQL schemas (`auth`, `billing`, `project`, `template`, `orchestration`, `quality`, `visual`, `document`, `notification`), service-specific Alembic migrations and least-privilege DB users; all nine passed local and hosted-Neon migration/role verification.
 - [ ] Create stable user/project/report identifiers without allowing cross-service ORM ownership; resolve reference lookup through APIs or verified event projections. Auth's permanent UUIDv4 user ID is implemented and documented in the
   [P02 database foundation runbook](./runbooks/P02_DATABASE_FOUNDATION.md);
   the Document-issued UUIDv4 `report_id` recommendation and API lookup remain
   proposals pending approval.
-- [ ] Add versioned API/event schemas, access/audit logs, outbox/inbox and deduplication only where asynchronous cross-service guarantees are required. The v1 event and local retry/deduplication test are recorded in the runbook; production transport and delivery remain open.
-- [ ] Add document/R2 metadata versioning, checksum, signed URLs, immutable version references, cleanup/deletion and access logging.
+- [ ] Add versioned API/event schemas, access/audit logs, outbox/inbox and deduplication only where asynchronous cross-service guarantees are required. The `project.facts.updated` v1 event and local retry/deduplication test are recorded in the runbook; production Cloud Tasks transport remains open for approval and implementation.
+- [ ] Add document/R2 metadata versioning, checksum, signed URLs, immutable version references, cleanup/deletion and access logging. Local metadata fixtures pass; live private-bucket signed-access/expiry/cleanup verification is blocked because no R2 credentials are configured and no dedicated test bucket is confirmed.
 - [x] Add durable job ledger, attempt history, progress event sequence, section version and checkpoint reference entities in orchestration schema.
-- [ ] Define ownership, retention and backup/restore drills; prove service A cannot insert/update service B's table. Local synthetic row cleanup and backup/restore evidence are recorded; retention periods, deletion automation, hosted Neon and live R2 checks remain pending.
+- [ ] Define ownership, retention and backup/restore drills; prove service A cannot insert/update service B's table. Service ownership and cross-write denial passed local and hosted-Neon checks; the local logical backup/restore drill passed. Retention periods and deletion workflow remain open; hosted Neon is **PASSED**, while live R2 remains blocked.
 
 **Gate P02:** Migrations work from an empty database, can be rolled forward independently, owner roles cannot cross-write, secrets are not stored in code, backups/restores are exercised.
 
-Local schema/role/baseline verification and remaining P02 work are recorded in the [P02 database foundation runbook](./runbooks/P02_DATABASE_FOUNDATION.md); this evidence does not complete the P02 gate.
+**P02 status (2026-11-15): BLOCKED — not complete.** The migration, role-isolation, credential-hygiene, and local logical backup/restore exit criteria are recorded as passed. Hosted Neon verification is **PASSED** and is not being rerun. Live R2 verification and approval of the deletion-retention, report-ID, and production event-transport recommendations remain open. See the [P02 database foundation runbook](./runbooks/P02_DATABASE_FOUNDATION.md) for evidence, missing R2 prerequisites, and exact approval wording.
 
 ### Phase P03 — Authentication, route protection and notification foundation
 

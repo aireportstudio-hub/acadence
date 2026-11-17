@@ -110,8 +110,8 @@ def run_migration(service_dir: Path, database_url: str, *arguments: str) -> None
     )
     require(
         result.returncode == 0,
-        f"Alembic {arguments} failed in {service_dir.name}:\n"
-        f"{result.stdout}{result.stderr}",
+        f"Alembic {arguments} failed in {service_dir.name} "
+        f"(exit {result.returncode}); output withheld to protect connection credentials.",
     )
 
 
@@ -126,8 +126,7 @@ def bootstrap_services(
             for purpose in ("owner", "migrator", "runtime")
         ]
         existing_schemas = connection.execute(
-            "SELECT schema_name FROM information_schema.schemata "
-            "WHERE schema_name = ANY(%s)",
+            "SELECT nspname FROM pg_namespace WHERE nspname = ANY(%s)",
             (schemas,),
         ).fetchall()
         existing_roles = connection.execute(
@@ -136,7 +135,9 @@ def bootstrap_services(
         ).fetchall()
         require(
             not existing_schemas and not existing_roles,
-            "The database is not fresh: one or more Acadence schemas or roles exist.",
+            "The database is not fresh: Acadence schemas or roles exist "
+            f"(schemas: {existing_schemas!r}, roles: {existing_roles!r}). "
+            "Inspect the partial setup; do not retry on this database.",
         )
 
         for service_name, _, schema in SERVICES:
@@ -163,6 +164,9 @@ def assert_baseline_versions(
 ) -> None:
     with psycopg.connect(admin_url, autocommit=True) as connection:
         for _, schema, _ in SERVICES:
+            connection.execute(
+                sql.SQL("SET ROLE {}").format(sql.Identifier(role_name(schema, "owner")))
+            )
             exists = connection.execute(
                 "SELECT to_regclass(%s)",
                 (f"{schema}.alembic_version",),
@@ -190,11 +194,15 @@ def assert_baseline_versions(
                     )
                 ).fetchall()
                 require(not versions, f"{schema} retained a version during downgrade")
+            connection.execute("RESET ROLE")
 
 
 def assert_only_baseline_tables(admin_url: str) -> None:
     with psycopg.connect(admin_url, autocommit=True) as connection:
         for _, schema, _ in SERVICES:
+            connection.execute(
+                sql.SQL("SET ROLE {}").format(sql.Identifier(role_name(schema, "owner")))
+            )
             tables = connection.execute(
                 "SELECT table_name FROM information_schema.tables "
                 "WHERE table_schema = %s AND table_type = 'BASE TABLE'",
@@ -204,6 +212,7 @@ def assert_only_baseline_tables(admin_url: str) -> None:
                 tables == [("alembic_version",)],
                 f"{schema} has unexpected pre-test tables: {tables!r}",
             )
+            connection.execute("RESET ROLE")
 
 
 def assert_role_configuration(admin_url: str) -> None:
@@ -234,6 +243,16 @@ def assert_role_configuration(admin_url: str) -> None:
                 (schema,),
             ).fetchone()
             require(owner == (role_name(schema, "owner"),), f"{schema} has wrong owner")
+            require(
+                connection.execute(
+                    "SELECT COALESCE(bool_or(set_option), false), "
+                    "COALESCE(bool_or(inherit_option), false) "
+                    "FROM pg_auth_members "
+                    "WHERE member = current_user::regrole AND roleid = %s::regrole",
+                    (role_name(schema, "owner"),),
+                ).fetchone() == (True, False),
+                f"Bootstrap administrator needs non-inheriting SET membership for {schema}",
+            )
 
 
 def create_permission_fixtures(admin_url: str) -> None:
@@ -252,33 +271,31 @@ def create_permission_fixtures(admin_url: str) -> None:
                 ),
                 (schema,),
             )
-            connection.execute("RESET ROLE")
-
-        for _, source_schema, _ in SERVICES:
-            runtime = role_name(source_schema, "runtime")
             connection.execute(
                 sql.SQL(
                     "GRANT SELECT, INSERT, UPDATE, DELETE ON {}.permission_probe TO {}"
                 ).format(
-                    sql.Identifier(source_schema),
-                    sql.Identifier(runtime),
+                    sql.Identifier(schema),
+                    sql.Identifier(role_name(schema, "runtime")),
                 )
             )
-            for _, target_schema, _ in SERVICES:
-                if target_schema == source_schema:
+            for _, other_schema, _ in SERVICES:
+                if other_schema == schema:
                     continue
+                runtime = role_name(other_schema, "runtime")
                 connection.execute(
                     sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
-                        sql.Identifier(target_schema),
+                        sql.Identifier(schema),
                         sql.Identifier(runtime),
                     )
                 )
                 connection.execute(
                     sql.SQL("GRANT SELECT ON {}.permission_probe TO {}").format(
-                        sql.Identifier(target_schema),
+                        sql.Identifier(schema),
                         sql.Identifier(runtime),
                     )
                 )
+            connection.execute("RESET ROLE")
 
 
 def verify_owner_boundaries(admin_url: str) -> None:
@@ -319,9 +336,25 @@ def verify_login_boundaries(
                 == (migrator, migrator),
                 f"{schema} migration ran without its separate login",
             )
+            connection.execute(
+                sql.SQL("SET ROLE {}").format(sql.Identifier(role_name(schema, "owner")))
+            )
+            require(
+                connection.execute("SELECT session_user, current_user").fetchone()
+                == (migrator, role_name(schema, "owner")),
+                f"{schema} migrator could not assume its own owner role",
+            )
+            connection.execute("RESET ROLE")
             for _, other_schema, _ in SERVICES:
                 if other_schema == schema:
                     continue
+                require_denied(
+                    connection,
+                    sql.SQL("SET ROLE {}").format(
+                        sql.Identifier(role_name(other_schema, "owner"))
+                    ),
+                    f"{schema} migrator assuming {other_schema} owner",
+                )
                 require_denied(
                     connection,
                     sql.SQL("INSERT INTO {}.permission_probe VALUES ('denied')").format(
@@ -375,6 +408,13 @@ def verify_login_boundaries(
             )
 
             for _, other_schema, _ in SERVICES:
+                require_denied(
+                    connection,
+                    sql.SQL("SET ROLE {}").format(
+                        sql.Identifier(role_name(other_schema, "owner"))
+                    ),
+                    f"{schema} runtime assuming {other_schema} owner",
+                )
                 if other_schema == schema:
                     continue
                 foreign_table = sql.SQL("{}.permission_probe").format(
@@ -626,7 +666,7 @@ def verify_persistence_fixtures(
 
     document_id = uuid4()
     document_version_id = uuid4()
-    document_access_id = uuid4()
+    document_access_ids = (uuid4(), uuid4())
     document_audit_id = uuid4()
     with psycopg.connect(document_runtime, autocommit=True) as connection:
         connection.execute(
@@ -645,8 +685,12 @@ def verify_persistence_fixtures(
         connection.execute(
             "INSERT INTO document.document_access_history "
             "(id, document_version_id, actor_id, access_action, result, request_id) "
-            "VALUES (%s, %s, %s, 'preview', 'success', 'req_fixture')",
-            (document_access_id, document_version_id, owner_id),
+            "VALUES (%s, %s, %s, 'preview', 'success', 'req_fixture'), "
+            "(%s, %s, %s, 'metadata_read', 'success', 'req_fixture_2')",
+            (
+                document_access_ids[0], document_version_id, owner_id,
+                document_access_ids[1], document_version_id, owner_id,
+            ),
         )
         connection.execute(
             "INSERT INTO document.audit_events "
@@ -673,14 +717,18 @@ def verify_persistence_fixtures(
             ).format(sql.Literal(str(document_version_id))),
             "Document runtime changing immutable version metadata",
         )
-        for table in ("document_objects", "document_access_history", "audit_events"):
+        for table, count in (
+            ("document_objects", 1),
+            ("document_access_history", 2),
+            ("audit_events", 1),
+        ):
             require(
                 connection.execute(
                     sql.SQL("SELECT count(*) FROM document.{}").format(
                         sql.Identifier(table)
                     )
                 ).fetchone()
-                == (1,),
+                == (count,),
                 f"Document fixture was not readable from {table}",
             )
 
@@ -727,7 +775,7 @@ def verify_persistence_fixtures(
         job_id,
         document_id,
         document_version_id,
-        document_access_id,
+        document_access_ids,
         document_audit_id,
         orchestration_audit_id,
     )
@@ -751,11 +799,11 @@ def verify_local_event_delivery(
             "CREATE TABLE orchestration.p02_delivery_effect_probe ("
             "event_id uuid PRIMARY KEY, fact_snapshot_version integer NOT NULL)"
         )
-        connection.execute("RESET ROLE")
         connection.execute(
             "GRANT SELECT, INSERT ON orchestration.p02_delivery_effect_probe "
             "TO acadence_orchestration_runtime"
         )
+        connection.execute("RESET ROLE")
 
     transport = LocalTestTransport()
     with psycopg.connect(project_runtime, autocommit=True) as connection:
@@ -872,7 +920,7 @@ def verify_proposed_deletion(
     job_id: UUID,
     document_id: UUID,
     document_version_id: UUID,
-    document_access_id: UUID,
+    document_access_ids: tuple[UUID, UUID],
     document_audit_id: UUID,
     orchestration_audit_id: UUID,
 ) -> None:
@@ -906,112 +954,162 @@ def verify_proposed_deletion(
         connection.execute("RESET ROLE")
 
         connection.execute("SET ROLE acadence_document_owner")
-        try:
-            connection.execute(
+        with connection.transaction():
+            history = connection.execute(
+                "SELECT id FROM document.document_access_history "
+                "WHERE document_version_id = %s",
+                (document_version_id,),
+            ).fetchall()
+            require(
+                {row[0] for row in history} == set(document_access_ids),
+                "Document version has unexpected synthetic access history",
+            )
+            try:
+                with connection.transaction():
+                    connection.execute(
+                        "DELETE FROM document.document_versions WHERE id = %s",
+                        (document_version_id,),
+                    )
+            except (psycopg.errors.RestrictViolation, psycopg.errors.ForeignKeyViolation) as exc:
+                require(
+                    exc.diag.constraint_name
+                    == "document_access_history_document_version_id_fkey",
+                    "Document version deletion failed on an unexpected constraint",
+                )
+            else:
+                raise RuntimeError(
+                    "Document version cleanup ignored its access-history reference"
+                )
+            require(
+                connection.execute(
+                    "SELECT count(*) FROM document.document_access_history "
+                    "WHERE document_version_id = %s",
+                    (document_version_id,),
+                ).fetchone()
+                == (len(document_access_ids),),
+                "RESTRICT probe changed the synthetic access history",
+            )
+            deleted_history = connection.execute(
+                "DELETE FROM document.document_access_history WHERE document_version_id = %s",
+                (document_version_id,),
+            )
+            require(
+                deleted_history.rowcount == len(document_access_ids),
+                "Document cleanup did not remove all synthetic access history",
+            )
+            deleted_version = connection.execute(
                 "DELETE FROM document.document_versions WHERE id = %s",
                 (document_version_id,),
             )
-        except psycopg.errors.ForeignKeyViolation:
-            pass
-        else:
-            raise RuntimeError(
-                "Document version cleanup ignored its access-history reference"
+            require(
+                deleted_version.rowcount == 1,
+                "Document cleanup did not remove the synthetic version",
             )
-        connection.execute(
-            "DELETE FROM document.document_access_history WHERE id = %s",
-            (document_access_id,),
-        )
-        connection.execute(
-            "DELETE FROM document.document_versions WHERE id = %s",
-            (document_version_id,),
-        )
-        connection.execute(
-            "UPDATE document.audit_events SET actor_id = NULL, project_id = NULL, "
-            "object_id = 'redacted', action = 'deletion_completed' WHERE id = %s",
-            (document_audit_id,),
-        )
-        connection.execute(
-            "DELETE FROM document.document_objects WHERE id = %s",
-            (document_id,),
-        )
+            connection.execute(
+                "UPDATE document.audit_events SET actor_id = NULL, project_id = NULL, "
+                "object_id = 'redacted', action = 'deletion_completed' WHERE id = %s",
+                (document_audit_id,),
+            )
+            connection.execute(
+                "DELETE FROM document.document_objects WHERE id = %s",
+                (document_id,),
+            )
         connection.execute("RESET ROLE")
 
         connection.execute("SET ROLE acadence_auth_owner")
         connection.execute("DELETE FROM auth.users WHERE id = %s", (owner_id,))
         connection.execute("RESET ROLE")
 
-        for query, params, label in (
-            ("SELECT count(*) FROM project.projects WHERE id = %s", (project_id,), "project"),
+        for schema, query, params, label in (
+            ("project", "SELECT count(*) FROM project.projects WHERE id = %s", (project_id,), "project"),
             (
+                "project",
                 "SELECT count(*) FROM project.outbox_events WHERE event_id = %s",
                 (event_id,),
                 "outbox event",
             ),
             (
+                "orchestration",
                 "SELECT count(*) FROM orchestration.report_jobs WHERE id = %s",
                 (job_id,),
                 "report job",
             ),
             (
+                "orchestration",
                 "SELECT count(*) FROM orchestration.job_attempts WHERE job_id = %s",
                 (job_id,),
                 "job attempts",
             ),
             (
+                "orchestration",
                 "SELECT count(*) FROM orchestration.section_versions WHERE job_id = %s",
                 (job_id,),
                 "section versions",
             ),
             (
+                "orchestration",
                 "SELECT count(*) FROM orchestration.input_version_refs WHERE job_id = %s",
                 (job_id,),
                 "input version references",
             ),
             (
+                "orchestration",
                 "SELECT count(*) FROM orchestration.progress_events WHERE job_id = %s",
                 (job_id,),
                 "progress events",
             ),
             (
+                "orchestration",
                 "SELECT count(*) FROM orchestration.checkpoint_references WHERE job_id = %s",
                 (job_id,),
                 "checkpoint references",
             ),
             (
+                "orchestration",
                 "SELECT count(*) FROM orchestration.inbox_deduplication "
                 "WHERE producer_service = 'project' AND event_id = %s",
                 (event_id,),
                 "inbox event",
             ),
             (
+                "document",
                 "SELECT count(*) FROM document.document_versions "
                 "WHERE id = %s OR document_object_id = %s",
                 (document_version_id, document_id),
                 "document versions",
             ),
             (
+                "document",
                 "SELECT count(*) FROM document.document_access_history "
-                "WHERE id = %s",
-                (document_access_id,),
+                "WHERE document_version_id = %s",
+                (document_version_id,),
                 "document access history",
             ),
             (
+                "document",
                 "SELECT count(*) FROM document.document_objects WHERE id = %s",
                 (document_id,),
                 "document metadata",
             ),
-            ("SELECT count(*) FROM auth.users WHERE id = %s", (owner_id,), "Auth user"),
+            ("auth", "SELECT count(*) FROM auth.users WHERE id = %s", (owner_id,), "Auth user"),
         ):
+            connection.execute(
+                sql.SQL("SET ROLE {}").format(sql.Identifier(role_name(schema, "owner")))
+            )
             require(
                 connection.execute(query, params).fetchone() == (0,),
                 f"Proposed cleanup left synthetic {label} rows behind",
             )
+            connection.execute("RESET ROLE")
 
         for schema, table, audit_id in (
             ("project", "audit_events", None),
             ("orchestration", "audit_events", orchestration_audit_id),
             ("document", "audit_events", document_audit_id),
         ):
+            connection.execute(
+                sql.SQL("SET ROLE {}").format(sql.Identifier(role_name(schema, "owner")))
+            )
             if schema == "project":
                 row = connection.execute(
                     "SELECT actor_id, project_id, object_id, action FROM project.audit_events "
@@ -1029,6 +1127,7 @@ def verify_proposed_deletion(
                 row == (None, None, "redacted", "deletion_completed"),
                 f"{schema}.{table} did not retain only the synthetic deletion audit",
             )
+            connection.execute("RESET ROLE")
 
     print("PASS proposed synthetic account/project cleanup and minimal audit retention")
 
@@ -1087,9 +1186,11 @@ def main() -> None:
         run_migration(ROOT / "services" / service_name, migration_urls[schema], "upgrade", "head")
     assert_baseline_versions(admin_url, schemas, persistence_tables=True)
     assert_role_configuration(admin_url)
+    print("PASS service role configuration and administrator SET permissions")
     create_permission_fixtures(admin_url)
     verify_owner_boundaries(admin_url)
     verify_login_boundaries(admin_url, passwords)
+    print("PASS owner, migrator, and runtime role permission boundaries")
     verify_persistence_fixtures(admin_url, passwords)
     verify_independent_rollback(admin_url, migration_urls)
     print("PASS all nine service schemas, role boundaries, and migration checks")

@@ -4,23 +4,61 @@ This runbook records the schema, role and Alembic baseline foundation and the
 Auth, Project, AI Orchestration, and Document persistence revisions. It does
 not mark the full P02 gate complete.
 
+## P02 gate status (2026-11-15)
+
+**Status: BLOCKED — P02 is not complete.** The recorded database and backup
+evidence below passes the database exit criteria; the live R2 check and three
+explicit approvals remain open.
+
+| Exit criterion or gate | Status | Evidence or blocker |
+| --- | --- | --- |
+| Nine empty-database baselines and migrations to head | **PASS** | Local and hosted Neon runs passed for all nine services. |
+| Independent migration downgrade/reapply | **PASS** | Local and hosted Neon runs passed for all nine services. |
+| Service-role isolation and no cross-service writes | **PASS** | Local and hosted Neon role checks passed. |
+| No credentials committed in the P02 changes | **PASS** | The reviewed changes contain no live credentials or signed URLs; environment inspection found no R2 credential variables. |
+| Backup and restore exercised | **PASS — local logical drill** | The 2026-11-14 PostgreSQL 16 drill restored all nine schemas and checked revisions, synthetic rows, and role boundaries. It does not prove managed Neon PITR or R2 payload recovery. |
+| Hosted Neon verification | **PASSED — reuse recorded result** | Full nine-service direct/pooler verification is recorded below as passed on 2026-11-15. It was not rerun for this batch. |
+| Private R2 signed upload/download, unsigned denial, expiry, and cleanup | **BLOCKED** | No R2 credentials are configured, no dedicated private test bucket is confirmed, and no product signing endpoint is implemented. Only the offline dummy-credential signature probe exists. |
+| Project/account deletion retention | **OPEN — approval required** | No retention periods or production deletion workflow are selected. |
+| Canonical report ID issuer and lookup contract | **OPEN — approval required** | Document-issued UUIDv4 is a proposal; no authoritative Document report record/API exists. |
+| Production `project.facts.updated` transport | **OPEN — approval required** | Cloud Tasks is the one-target recommendation; no production relay or consumer is implemented. |
+
+### Validation for this status update
+
+`git diff --check` passed. The P02 verifier's Python syntax check passed, and
+the added diff was checked for R2 credential assignments, signed URL
+signatures, and credentialed PostgreSQL URLs; none were found. No application
+code was changed in this status update, so the recorded local PostgreSQL,
+service-suite, and hosted Neon results above were reused rather than rerun.
+Google Cloud billing remained off.
+
 ## Local verification
 
-Use a fresh, disposable local PostgreSQL database and a database administrator
-login. Do not point this verifier at Neon, Google Cloud, or any database with
-data to retain. The script refuses to run if any of the nine service schemas or
-Acadence roles already exist. It creates random migration/runtime role
-passwords in memory, then connects through each role separately.
+For local verification, use a fresh, disposable local PostgreSQL database and a
+database administrator login. For hosted Neon, follow the separate preflight
+below; never use a database with data to retain. The script refuses to run if
+any of the nine service schemas or Acadence roles already exist. It creates
+random migration/runtime role passwords in memory, then connects through each
+role separately.
+
+Supply `P02_TEST_ADMIN_DATABASE_URL` through a secure process environment,
+without placing connection strings or passwords in commands or logs. Optionally
+supply `P02_TEST_RUNTIME_DATABASE_URL` the same way for the same disposable
+database. PostgreSQL 16 or newer is required for per-membership SET and
+INHERIT options. The bootstrap login must own the database, have CREATEROLE,
+and be able to grant membership in the owner roles it creates.
 
 ```powershell
-$env:P02_TEST_ADMIN_DATABASE_URL = "postgresql://postgres:<local-password>@127.0.0.1:<port>/<fresh-database>"
-# Optional: set this to a separate pooled endpoint for the same disposable database.
-# Runtime role connections use it; administrator and migration connections remain direct.
-$env:P02_TEST_RUNTIME_DATABASE_URL = "postgresql://unused@<pooler-host>:<port>/<fresh-database>?sslmode=require"
 .\.venv\Scripts\python.exe scripts\test_p02_database_foundation.py
 Remove-Item Env:\P02_TEST_ADMIN_DATABASE_URL
 Remove-Item Env:\P02_TEST_RUNTIME_DATABASE_URL -ErrorAction SilentlyContinue
 ```
+
+Each bootstrap explicitly grants its owner role to the bootstrap administrator
+with SET enabled and inheritance disabled, then assumes that owner for
+schema grants. Each migrator can assume only its own service owner; runtime
+roles do not receive owner membership. The administrator must be treated as
+privileged because it can assume all nine owners.
 
 For the optional runtime endpoint, only its host, port, database, and connection
 options are used; the verifier injects each generated runtime role and password.
@@ -145,8 +183,9 @@ deduplication, and cross-schema write denial. Project Service tests passed
 with one environment-dependent database integration test skipped; its two
 event-contract cases ran. AI Orchestration and Document Service tests passed.
 Python compilation, `git diff --check`, and the new-file whitespace scan passed.
-The PostgreSQL container was removed. Google Cloud, Neon, and R2 were not
-contacted; no billing was enabled.
+The PostgreSQL container was removed. This local run did not contact Google
+Cloud, Neon, or R2; no billing was enabled. The later hosted Neon result is
+recorded in §4 below.
 
 ## Local logical backup and restore drill (2026-11-14)
 
@@ -252,17 +291,32 @@ recovery. The Document check covers metadata only, not an R2 object.
 
 ## Remaining P02 work
 
-This batch does not complete P02. The report-record issuer/lookup contract,
-retention periods, deletion workflow, and production event transport still need
-approval. Local PostgreSQL tests now cover the proposed row cleanup and
-at-least-once delivery/deduplication behavior, but no production cleanup worker,
-publisher, or consumer is implemented. Dedicated Neon and private R2
-verification remain pending. The local logical backup/restore drill above does
+The local logical backup/restore drill and hosted Neon verification pass; do
+not rerun Neon for this batch. P02 remains blocked by the live private R2 check
+and approval of the retention, report-ID, and production event-transport
+recommendations below. Local PostgreSQL tests cover synthetic row cleanup and
+the at-least-once delivery/deduplication shape, but no production deletion
+worker, publisher, or consumer is implemented. The backup/restore drill does
 not verify managed Neon recovery, retention, or R2 payload recovery.
+
+### Decisions already recorded
+
+- The nine service boundaries, service-owned schemas, and no-cross-service
+  write rule are selected architectural requirements and passed the recorded
+  role checks.
+- Auth's permanent UUIDv4 user ID is implemented and recorded in the roadmap
+  and this runbook.
+- `project.facts.updated` v1, Project outbox ownership, Orchestration inbox
+  deduplication, and the at-least-once/idempotent local test are recorded.
+- The technology stack prefers Cloud Tasks for one-recipient async dispatch and
+  Pub/Sub only for justified fan-out. This is an architectural direction, not
+  approval of a production queue/configuration for this event.
+- The local logical backup/restore drill passed. It is not a managed Neon PITR
+  or R2 payload recovery approval.
 
 ## P02 batch proposals and verification (2026-11-14)
 
-### 1. Project/account deletion and retention proposal — approval required
+### 1. Project/account deletion and retention proposal — **OPEN; approval required**
 
 Deletion is a service-owned workflow, not cross-schema SQL from Auth or
 Project. A request should first be authorized and recorded, then fan out
@@ -289,6 +343,33 @@ window. Legal holds, billing records, security investigations, and recovery
 requirements need an explicit exception and access policy before retention
 values are set.
 
+**Concrete recommendation (not approved):** Keep account and project content
+until the student requests deletion; do not expire an active project for
+inactivity. On request, revoke access and cancel active jobs immediately, then
+purge the account's live Auth, Project, Orchestration, Document, and R2 data
+within 30 calendar days, removing identity rows only after every owning service
+confirms completion. Expire abandoned uploads after 24 hours and failed exports
+after 7 days. Retain completed job/checkpoint records and delivered outbox or
+processed inbox rows for 30 days after terminal completion; retain only
+minimal, pseudonymized audit/access metadata for 365 days. Use a 35-day rolling
+database-backup window and retain deletion tombstones for 45 days after live
+purge, replaying them before a restored database is exposed. Delete all R2
+object versions during the 30-day purge; do not claim R2 backup recovery until
+it is separately designed and tested. Legal holds and legally required
+financial records require a documented, access-restricted exception.
+
+**Exact approval wording:** “Approve the P02 retention recommendation: active
+account/project content has no inactivity expiry; deletion immediately revokes
+access and cancels work, then purges live data and all R2 object versions
+within 30 calendar days, with Auth identity rows removed after owning-service
+confirmation; abandoned uploads expire after 24 hours; failed exports after 7
+days; completed jobs/checkpoints and delivered/processed outbox/inbox rows
+after 30 days; minimal pseudonymized audit/access metadata after 365 days;
+database backups expire after 35 days; deletion tombstones remain for 45 days
+after live purge and are replayed before restore; legal holds and legally
+required financial records are restricted exceptions. R2 backup recovery is
+not promised without separate tested coverage.”
+
 The local synthetic cleanup check seeds an Auth user, Project and outbox rows,
 an Orchestration job with dependent rows, and Document metadata/access rows.
 Using each schema's owner role, it removes those rows in owner-local order,
@@ -298,7 +379,13 @@ not a production deletion API or a runtime-role permission grant. It cannot
 delete or verify an R2 payload, Cloud Run execution, external checkpoint, or
 backup. No retention timer was advanced or tested.
 
-### 2. Report ID contract proposal — approval required
+The Document fixture creates two access-history rows for one synthetic
+version. A nested transaction savepoint verifies that the named RESTRICT
+constraint blocks deletion without changing those rows; cleanup then deletes
+all history by version ID and asserts that the version is deleted. This
+fixture does not establish a production retention or deletion policy.
+
+### 2. Report ID contract proposal — **OPEN; approval required**
 
 The migrations contain two references and no authoritative report record:
 `orchestration.report_jobs.report_id` is non-empty `TEXT` (not unique, because
@@ -321,7 +408,15 @@ verified local projection only if a measured read need justifies it. A future
 Document API/migration must define uniqueness on its canonical report record
 and test ownership, retries, and lookup before this recommendation is adopted.
 
-### 3. `project.facts.updated` delivery proposal and local test
+**Exact approval wording:** “Approve the P02 report-ID contract: Document
+Service issues the canonical lowercase UUIDv4 `report_id`; services store and
+transport it as an opaque string without a cross-schema foreign key;
+Orchestration continues to issue `job_id` and receives `report_id` from
+Document; report lookup is through an authenticated, owner-scoped Document
+API; and a unique canonical Document report record is required before
+report-creation paths ship.”
+
+### 3. `project.facts.updated` delivery proposal and local test — **OPEN; approval required**
 
 Project writes the existing v1 event and its fact snapshot update in one
 Project transaction. A Project-owned relay validates the existing
@@ -335,19 +430,31 @@ transaction must roll back the inbox insert and effect together so the same
 event can be retried. The consumer reads the pinned fact snapshot from Project
 using the event's opaque IDs/version; fact values are not copied into this event.
 
-**Transport recommendation, not approved:** Cloud Tasks is the best-fit initial
-candidate for this single-recipient dispatch. Use Pub/Sub only if real
-multi-subscriber fan-out is approved. A transport ADR must choose the provider,
-authentication, queue/topic ownership, ordering strategy, timeouts, retry cap,
-backoff/jitter limits, dead-letter/replay operations, monitoring, and retention.
-The current outbox has `attempt_count` and `next_attempt_at`, but no delivery
-lease, last error, or dead-letter state. Before production dispatch, add an
-approved claim/lease and exhaustion/reconciliation design. A recovery scanner
-must reclaim expired leases and due unpublished rows; alert on oldest pending
-age and terminal failures; retain the event until delivery or an audited
-operator resolution. Retry delays should be bounded exponential backoff with
-jitter, honor provider `Retry-After`, and stop at an explicitly approved
-maximum rather than silently dropping or retrying forever.
+**Transport recommendation, not approved:** Use Cloud Tasks for this
+single-recipient dispatch, with one queue per environment and an OIDC-authenticated
+task to the private AI Orchestration endpoint. Keep delivery at least once and
+preserve the same event ID/payload on retries. Serialize dispatch per project
+and enforce `aggregate_version` at the consumer because Cloud Tasks does not
+promise per-project ordering. Use a 30-second handler deadline, at most 12
+attempts, and bounded exponential backoff from 1 to 300 seconds. Before
+production dispatch, add an approved database claim/lease and expiry recovery
+scanner. On exhaustion, retain the outbox row as operator-visible unresolved
+work, alert, and allow audited replay; never silently drop it. The consumer
+commits inbox deduplication and its single business effect in one transaction.
+Do not add Pub/Sub unless multi-subscriber fan-out is separately justified and
+approved. No Google Cloud API, resource, or billing change is part of this
+documentation decision.
+
+**Exact approval wording:** “Approve Cloud Tasks as the production transport
+for Project's `project.facts.updated` v1 event to AI Orchestration: one
+environment-specific queue, OIDC-authenticated private delivery, at-least-once
+retries preserving event ID and payload, per-project serialized dispatch with
+consumer `aggregate_version` checks, a 30-second handler deadline, at most 12
+attempts with 1–300-second bounded exponential backoff, and an expiry-recovering
+outbox lease. After exhaustion retain and alert on unresolved work for audited
+replay; commit consumer deduplication and its business effect atomically; do
+not use Pub/Sub without separately approved fan-out. This approval does not
+authorize enabling Google Cloud billing.”
 
 The nine-service verifier now uses a local in-process test transport and the
 existing PostgreSQL outbox/inbox tables. It simulates the transport accepting
@@ -360,18 +467,65 @@ service is contacted. This verifies the proposed at-least-once/idempotency
 shape, not a deployed relay, real transport ordering, concurrency, or
 dead-letter behavior.
 
-### 4. Hosted Neon verification — pending credentials
+### 4. Hosted Neon verification — **PASSED**
 
-No dedicated disposable Neon development branch or Neon credentials were
-configured for this batch, so no remote endpoint was contacted. Google Cloud
-billing remained off.
+**Result (2026-11-15):** The full nine-service verifier passed against a
+disposable Neon database. It used the direct endpoint for preflight, bootstrap,
+and migrations, and the pooled endpoint for runtime connections. Verification
+passed for all nine services, including role isolation, synthetic Document
+cleanup, and independent downgrade/reapply. Connection URLs and credentials
+are intentionally omitted from this runbook.
 
-When available, provide a disposable branch with no Acadence service schemas or
-roles, an administrator connection allowed to create the nine schemas/owner,
-migrator, and runtime roles, and the branch's PostgreSQL version/endpoint
-details. Set `P02_TEST_ADMIN_DATABASE_URL` to the direct, non-pooled admin
-endpoint and `P02_TEST_RUNTIME_DATABASE_URL` to the same disposable database's
-pooled endpoint. The verifier uses the direct endpoint for bootstrap/migrations
+Earlier hosted attempts stopped before completing Document cleanup; that
+failure is superseded by the successful full run recorded above. The verifier
+preflights all nine service schemas and 27 Acadence owner, migrator, and runtime
+roles, including schemas hidden from the administrator's information-schema
+view, and refuses to continue if any exist. Roles are cluster-wide, not
+database-local. Do not blindly drop existing roles or schemas: use a fresh
+dedicated branch or arrange cleanup only after confirming ownership and impact.
+
+On 2026-11-15, a disposable local PostgreSQL 17.6 cluster reproduced
+`must be able to SET ROLE "acadence_auth_owner"` with a non-superuser database
+owner having CREATEROLE. After the fix, all nine baseline and head migrations,
+independent downgrade/reapply, explicit administrator memberships, actual
+migrator/runtime login identity and owner-role boundaries, runtime CRUD and
+cross-schema/DDL denial, event retry/deduplication, and synthetic cleanup
+passed. The preflight also rejected an existing local setup and a partial
+schema invisible to `information_schema`. The runtime
+endpoint configuration for this local run pointed to the same local direct
+server, not a real pooler; those local results alone do not prove Neon pooled
+connectivity or password authentication. Hosted coverage is recorded above.
+
+**Update 2026-11-15, Document RESTRICT fix:** The reported previous hosted run
+passed nine migrations, service-role checks, and outbox retry/deduplication,
+then failed at Document cleanup with `RestrictViolation` on
+`document_access_history_document_version_id_fkey`; its retry hit the
+freshness guard. This earlier failure preceded the successful full hosted run
+recorded above. Do not reuse or alter that earlier branch.
+
+Local PostgreSQL 17.6 produced `ForeignKeyViolation` (`23503`) for the same
+RESTRICT relationship, so the unmodified verifier passed there. A test-only
+trigger raising `23001` reproduced the reported exception escaping the
+unmodified handler; this is a simulation, not a hosted run. After the fix,
+the complete verifier passed on two fresh, separate PostgreSQL 17.6 clusters:
+one with the native constraint and one with that test-only trigger. Both used
+a non-superuser database owner with CREATEROLE and SCRAM-authenticated
+connections. Each passed all nine baselines and head migrations, owner and
+login boundaries, event retry/deduplication, two-row Document cleanup, and
+all nine independent downgrade/reapply checks. Each retry was rejected by the
+freshness guard. The separate runtime URL used the same local server, not a
+pooler. Both clusters were stopped and removed. Pylance syntax validation and
+`git diff --check` passed. The hosted handoff's PowerShell and Python syntax
+passed, and offline checks rejected mismatched endpoint IDs, mismatched databases,
+and a host-override option.
+
+For any future rerun, provide a disposable branch with no Acadence service
+schemas or roles, an administrator connection allowed to create the nine
+schemas/owner, migrator, and runtime roles, and the branch's PostgreSQL
+version/endpoint details. Set `P02_TEST_ADMIN_DATABASE_URL` to the direct,
+non-pooled admin endpoint and `P02_TEST_RUNTIME_DATABASE_URL` to the same
+disposable database's pooled endpoint. The verifier uses the direct endpoint
+for bootstrap/migrations
 and separate generated service login/passwords through the runtime endpoint.
 Run `scripts/test_p02_database_foundation.py`; it must pass fresh baselines,
 all migrations, independent downgrade/reapply, runtime CRUD, cross-service
@@ -382,24 +536,135 @@ staging, or production data. Record Neon PostgreSQL version, pooler mode, role
 checks, migration revisions, and cleanup of the disposable branch without
 logging URLs, usernames/passwords, or tokens.
 
-### 5. Live private R2 verification — pending credentials
+After independently creating and confirming a new disposable Neon branch, run
+the following from the repository root. The read-only preflight requires standard
+Neon direct/pooler hostnames for the same endpoint and the same database,
+checks both connections, and refuses existing service schemas or roles before
+the verifier writes anything. Custom domains or multiple endpoint IDs require
+separate branch-identity verification rather than bypassing this check.
 
-No dedicated private R2 development bucket or R2 credentials were configured;
-no R2 endpoint was contacted. Google Cloud billing remained off.
+```powershell
+if ((Read-Host 'Type DISPOSABLE after confirming a NEW empty Neon branch') -cne 'DISPOSABLE') {
+    throw 'Stopped: a new disposable branch must be confirmed.'
+}
+try {
+    $env:P02_TEST_ADMIN_DATABASE_URL = [System.Net.NetworkCredential]::new('', (Read-Host 'Direct URL' -AsSecureString)).Password
+    $env:P02_TEST_RUNTIME_DATABASE_URL = [System.Net.NetworkCredential]::new('', (Read-Host 'Pooled URL' -AsSecureString)).Password
+    @'
+import os
+import sys
+import psycopg
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
+from scripts.test_p02_database_foundation import SERVICES, role_name
 
-The live test needs an isolated private dev bucket, scoped credentials for
-creating/deleting one synthetic object and issuing the intended signed grants,
-the exact upload/download signing endpoint and allowed TTL policy, and a
-non-production account with no user files. Record only bucket identity and
-test outcomes, never credential values, signed URLs, or object contents. Upload
-a random synthetic payload through the signed URL; verify checksum and private
-metadata; confirm anonymous/unsigned read and write are denied; verify a
-valid authorized download; verify upload and download URLs fail after their
-configured expiry; delete the object and confirm it is absent. Also check that
-cleanup is idempotent and that a failed delete remains retryable. The exact
-signing implementation, bucket policy, expiry values, and object-retention
-schedule need approval before the test can be run. Metadata-only local
-PostgreSQL fixtures do not satisfy this live R2 check.
+try:
+    direct, pooled = [make_url(os.environ[name]) for name in (
+        "P02_TEST_ADMIN_DATABASE_URL", "P02_TEST_RUNTIME_DATABASE_URL"
+    )]
+except (ArgumentError, ValueError):
+    sys.exit("Invalid endpoint URL; no database was changed.")
+for url in (direct, pooled):
+    if (url.drivername not in ("postgres", "postgresql") or not url.host
+        or not url.database or not url.username or not url.password
+        or set(url.query) - {"sslmode", "channel_binding"}
+        or url.query.get("sslmode") not in ("require", "verify-ca", "verify-full")):
+        sys.exit("Endpoint URL or TLS options rejected; no database was changed.")
+host = direct.host.lower()
+first, sep, suffix = host.partition(".")
+if (not sep or not first.startswith("ep-") or first.endswith("-pooler")
+    or not host.endswith(".neon.tech")
+    or pooled.host.lower() != first + "-pooler." + suffix
+    or direct.port != pooled.port or direct.database != pooled.database):
+    sys.exit("Endpoints are not the matching Neon direct/pooler pair and database.")
+try:
+    results = []
+    for name in ("P02_TEST_ADMIN_DATABASE_URL", "P02_TEST_RUNTIME_DATABASE_URL"):
+        with psycopg.connect(os.environ[name], autocommit=True) as conn:
+            results.append(conn.execute(
+                "SELECT current_database(), current_setting('server_version')"
+            ).fetchone())
+            if name == "P02_TEST_ADMIN_DATABASE_URL":
+                schemas = [schema for _, schema, _ in SERVICES]
+                roles = [role_name(schema, purpose) for schema in schemas
+                         for purpose in ("owner", "migrator", "runtime")]
+                if (conn.execute("SELECT 1 FROM pg_namespace WHERE nspname = ANY(%s)", (schemas,)).fetchone()
+                    or conn.execute("SELECT 1 FROM pg_roles WHERE rolname = ANY(%s)", (roles,)).fetchone()):
+                    sys.exit("Acadence schemas or roles exist; stop and use a new branch.")
+    if results[0] != results[1] or results[0][0] != direct.database:
+        sys.exit("Endpoints disagree on database or PostgreSQL version; stopped.")
+    print("PASS read-only endpoint and freshness preflight; PostgreSQL", results[0][1])
+except psycopg.Error as error:
+    sys.exit(f"Preflight database error: {type(error).__name__} (SQLSTATE {error.sqlstate or 'unavailable'}).")
+'@ | .\.venv\Scripts\python.exe -
+    if ($LASTEXITCODE -ne 0) { throw 'Preflight failed; verifier was not started.' }
+    .\.venv\Scripts\python.exe scripts\test_p02_database_foundation.py
+    if ($LASTEXITCODE -ne 0) { throw 'Verifier failed; do not retry on this branch.' }
+} finally {
+    Remove-Item Env:\P02_TEST_ADMIN_DATABASE_URL -ErrorAction SilentlyContinue
+    Remove-Item Env:\P02_TEST_RUNTIME_DATABASE_URL -ErrorAction SilentlyContinue
+}
+```
+
+### 5. Live private R2 verification — **BLOCKED; credentials/bucket unavailable**
+
+On 2026-11-15, process-environment inspection found none of
+`R2_ACCOUNT_ID`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`,
+`R2_SECRET_ACCESS_KEY`, or `R2_BUCKET_NAME`; no R2 or Cloudflare environment
+variables were present. The checked-in `.env.example` files contain empty
+account, endpoint, and access-key placeholders and the example bucket name
+`acadence-dev`, which does not establish that a dedicated private test bucket
+exists. No R2 endpoint was contacted. Google Cloud billing remained off.
+
+The repository has no production upload/download signing endpoint yet.
+[`r2_probe.py`](../../spikes/python/r2_probe.py) generates five-minute
+signatures with dummy credentials offline; it does not contact R2. The
+interactive [`test_r2_private_bucket.py`](../../scripts/test_r2_private_bucket.py)
+performs a direct live S3-compatible check with a dedicated private
+non-production bucket and scoped credentials. It asks for the account ID,
+matching HTTPS endpoint, bucket name, access-key ID, and secret access key;
+both credential prompts are hidden. It asks you to retype the bucket name to
+confirm the target is private and non-production. Values are held only in
+process memory and are not printed. Confirm that a five-minute signed URL
+lifetime is acceptable for the test bucket before running it. The script does
+not invoke a product signing endpoint.
+
+Run from the repository root:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\test_r2_private_bucket.py
+```
+
+The script uploads one synthetic object through a signed PUT, downloads it
+with a signed GET and verifies its SHA-256, then checks anonymous read denial
+on that same object and anonymous write denial. The unsigned checks accept
+HTTP 401/403 or HTTP 400 with R2 XML code `InvalidArgument` and exact message
+`Authorization`; other 400 responses fail. Separately, it checks that
+five-second signed GET and PUT URLs fail after expiry (only 401/403 count as
+denial), and deletes and
+verifies absence of all objects under a unique `acadence-r2-check` prefix,
+including repeated-delete idempotence. It reports cleanup success or failure
+even when an earlier check fails, but never credentials, signed URLs, raw
+response bodies, or object contents.
+Metadata-only PostgreSQL fixtures do not satisfy this live check. Until a
+successful run is recorded, the P02 R2 gate remains **BLOCKED**.
+
+The reported live attempt ended with unverified cleanup and three
+`InvalidArgument` errors. The cause remains open; the cleanup calls use
+`delete_object(Bucket=..., Key=...)` and `head_object(Bucket=..., Key=...)`,
+matching [Cloudflare's boto3 examples](https://developers.cloudflare.com/r2/examples/aws/boto3/).
+The runner now reports the first check failure before separate cleanup failures,
+including the HTTP status and R2 error code when available. If cleanup is not
+verified, inspect and remove the reported synthetic prefix in the confirmed
+test bucket; do not assume the objects were removed.
+
+Offline regression evidence (2026-11-15): eleven mocked tests passed, including
+unsigned 400 acceptance/rejection, expiry rejection, and simultaneous check and
+cleanup failures, without a live R2 request:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s scripts\tests -p test_r2_private_bucket.py -v
+```
 
 ### Batch test evidence
 
