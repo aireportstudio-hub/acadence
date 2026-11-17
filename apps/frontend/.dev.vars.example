@@ -4,7 +4,7 @@
 # Core settings should be resolved for the phase using this module; conditional ones can stay blank.
 
 # CORE | PUBLIC | Public URL for the web app; okay to expose
-NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_APP_URL=http://localhost:3001
 
 # CORE | PUBLIC | Browser-facing API path on same origin
 NEXT_PUBLIC_API_BASE_PATH=/api
@@ -20,6 +20,12 @@ NEXT_PUBLIC_TURNSTILE_SITE_KEY=
 
 # CORE | CONFIG | Private server-side URL for selected BFF/API ingress design
 API_GATEWAY_ORIGIN=http://localhost:8000
+
+# CORE | CONFIG | Auth Service URL used by the same-origin auth proxy and dashboard session guard
+AUTH_SERVICE_URL=http://localhost:8001
+
+# CORE | CONFIG | Project Service URL for server-side owner-scoped project views
+PROJECT_SERVICE_URL=http://localhost:8003
 
 # CONDITIONAL | CONFIG | Security decision pending: Worker-to-GCP authentication/ingress; do not deploy public unprotected backend
 EDGE_TO_API_AUTH_MODE=PENDING_DESIGN
